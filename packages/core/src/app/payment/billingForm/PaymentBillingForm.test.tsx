@@ -123,7 +123,17 @@ describe('PaymentBillingForm', () => {
         defaultProps = {
             billingAddress: getBillingAddress(),
             customerMessage: '',
-            getFields: () => getFormFields(),
+            getFields: () => [
+                ...getFormFields(),
+                {
+                    custom: false,
+                    default: '',
+                    id: 'postalCode',
+                    label: 'Postal Code',
+                    name: 'postalCode',
+                    required: false,
+                },
+            ],
             isBillingSameAsShipping: false,
             isLoading: false,
             isUsingMultiShipping: false,
@@ -133,6 +143,153 @@ describe('PaymentBillingForm', () => {
             onSelectAddress: jest.fn().mockResolvedValue(undefined),
             onUnhandledError: noop,
         };
+    });
+
+    it('preserves newer edits when an earlier tax save refreshes the address, and submits those edits', async () => {
+        const { rerender } = renderForm(defaultProps);
+
+        fireEvent.change(screen.getByTestId('firstNameInput-text'), {
+            target: { value: 'New draft' },
+        });
+        fireEvent.change(screen.getByTestId('addressLine1Input-text'), {
+            target: { value: '123 New Street' },
+        });
+        fireEvent.change(screen.getByTestId('postCodeInput-text'), { target: { value: '82435' } });
+        rerender(
+            <PaymentBillingFormTest
+                {...defaultProps}
+                billingAddress={{
+                    ...getBillingAddress(),
+                    stateOrProvinceCode: 'WY',
+                    lastName: 'Server value',
+                }}
+            />,
+        );
+        await waitFor(() =>
+            expect(screen.getByTestId('lastNameInput-text')).toHaveValue('Server value'),
+        );
+        expect(screen.getByTestId('firstNameInput-text')).toHaveValue('New draft');
+        expect(screen.getByTestId('addressLine1Input-text')).toHaveValue('123 New Street');
+        expect(screen.getByTestId('postCodeInput-text')).toHaveValue('82435');
+        await act(async () => {
+            await capturedEnsureBillingAddressSaved?.();
+        });
+        expect(onPersist).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                firstName: 'New draft',
+                address1: '123 New Street',
+                postalCode: '82435',
+            }),
+        );
+    });
+
+    it('does not lose an edited field when an older response follows its acknowledgement', async () => {
+        const { rerender } = renderForm(defaultProps);
+
+        fireEvent.change(screen.getByTestId('firstNameInput-text'), {
+            target: { value: 'Latest edit' },
+        });
+        rerender(
+            <PaymentBillingFormTest
+                {...defaultProps}
+                billingAddress={{ ...getBillingAddress(), firstName: 'Latest edit' }}
+            />,
+        );
+        await waitFor(() =>
+            expect(screen.getByTestId('firstNameInput-text')).toHaveValue('Latest edit'),
+        );
+        rerender(
+            <PaymentBillingFormTest
+                {...defaultProps}
+                billingAddress={{ ...getBillingAddress(), firstName: 'Older response' }}
+            />,
+        );
+        await waitFor(() =>
+            expect(screen.getByTestId('firstNameInput-text')).toHaveValue('Latest edit'),
+        );
+    });
+
+    it('preserves a deliberately cleared field and validates it before submission', async () => {
+        const { rerender } = renderForm(defaultProps);
+
+        fireEvent.change(screen.getByTestId('firstNameInput-text'), { target: { value: '' } });
+        rerender(
+            <PaymentBillingFormTest
+                {...defaultProps}
+                billingAddress={{ ...getBillingAddress(), postalCode: '99999' }}
+            />,
+        );
+        await waitFor(() => expect(screen.getByTestId('postCodeInput-text')).toHaveValue('99999'));
+        expect(screen.getByTestId('firstNameInput-text')).toHaveValue('');
+        await act(async () => {
+            expect(await capturedEnsureBillingAddressSaved?.()).toBe(false);
+        });
+        expect(onPersist).not.toHaveBeenCalled();
+    });
+
+    it('refreshes untouched fields from checkout state', async () => {
+        const { rerender } = renderForm(defaultProps);
+
+        rerender(
+            <PaymentBillingFormTest
+                {...defaultProps}
+                billingAddress={{ ...getBillingAddress(), firstName: 'Loaded address' }}
+            />,
+        );
+        await waitFor(() =>
+            expect(screen.getByTestId('firstNameInput-text')).toHaveValue('Loaded address'),
+        );
+    });
+
+    it('honors an explicit same-as-shipping replacement after editing', async () => {
+        const { rerender } = renderForm(defaultProps);
+
+        fireEvent.change(screen.getByTestId('firstNameInput-text'), {
+            target: { value: 'Draft name' },
+        });
+        rerender(
+            <PaymentBillingFormTest
+                {...defaultProps}
+                billingAddress={{ ...getBillingAddress(), firstName: 'Shipping name' }}
+                isBillingSameAsShipping
+            />,
+        );
+        await waitFor(() =>
+            expect(screen.queryByTestId('firstNameInput-text')).not.toBeInTheDocument(),
+        );
+        rerender(
+            <PaymentBillingFormTest
+                {...defaultProps}
+                billingAddress={{ ...getBillingAddress(), firstName: 'Shipping name' }}
+            />,
+        );
+        await waitFor(() =>
+            expect(screen.getByTestId('firstNameInput-text')).toHaveValue('Shipping name'),
+        );
+    });
+
+    it('preserves the newer country and cleared region when an old country response arrives', async () => {
+        const props = { ...defaultProps, getFields: getFieldsWithCountry };
+        const { rerender } = renderForm(props);
+
+        await userEvent.selectOptions(screen.getByTestId('countryCodeInput-select'), 'CA');
+        fireEvent.change(screen.getByTestId('firstNameInput-text'), {
+            target: { value: 'Canadian draft' },
+        });
+        rerender(
+            <PaymentBillingFormTest
+                {...props}
+                billingAddress={{
+                    ...getBillingAddress(),
+                    firstName: 'Old country save',
+                    stateOrProvinceCode: 'TX',
+                }}
+            />,
+        );
+        await waitFor(() =>
+            expect(screen.getByTestId('countryCodeInput-select')).toHaveValue('CA'),
+        );
+        expect(screen.getByTestId('firstNameInput-text')).toHaveValue('Canadian draft');
     });
 
     it('renders the address fields without a submit button', () => {
@@ -733,6 +890,44 @@ describe('PaymentBillingForm', () => {
             await openAddressSelect();
 
             expect(await screen.findByText(consignmentAddress.address1)).toBeInTheDocument();
+        });
+
+        it('replaces an edited draft with an explicitly selected saved address', async () => {
+            const props = {
+                ...defaultProps,
+                billingAddress: { ...getBillingAddress(), address1: 'New draft street' },
+            };
+            const { rerender } = renderForm(props);
+
+            fireEvent.change(screen.getByTestId('firstNameInput-text'), {
+                target: { value: 'Unfinished draft' },
+            });
+
+            const selected = {
+                ...getBillingAddress(),
+                firstName: 'Selected address',
+                address1: '67890 Testing Way',
+            };
+
+            jest.spyOn(checkoutState.data, 'getBillingAddress').mockReturnValue(selected);
+            fireEvent.click(await screen.findByTestId('address-select-button'));
+            fireEvent.click(await screen.findByText('67890 Testing Way'));
+            await waitFor(() =>
+                expect(screen.getByTestId('firstNameInput-text')).toHaveValue('Selected address'),
+            );
+            rerender(
+                <PaymentBillingFormTest
+                    {...defaultProps}
+                    billingAddress={{
+                        ...getBillingAddress(),
+                        firstName: 'Old autosave',
+                        address1: 'Old draft street',
+                    }}
+                />,
+            );
+            await waitFor(() =>
+                expect(screen.getByTestId('firstNameInput-text')).toHaveValue('Selected address'),
+            );
         });
 
         it('selects a saved address as it is', async () => {

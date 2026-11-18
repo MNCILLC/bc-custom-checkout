@@ -1,12 +1,13 @@
 const CircularDependencyPlugin = require('circular-dependency-plugin');
 const EventEmitter = require('events');
-const { copyFileSync } = require('fs');
+const { copyFileSync, writeFileSync } = require('fs');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const { join } = require('path');
 const { DefinePlugin } = require('webpack');
 const WebpackAssetsManifest = require('webpack-assets-manifest');
 const { SubresourceIntegrityPlugin } = require('webpack-subresource-integrity');
 
+const { getWarehouseDeployment } = require('./packages/core/src/app/warehouse/deployment');
 const {
     AsyncHookPlugin,
     BuildHookPlugin,
@@ -29,7 +30,11 @@ const DEV_SERVER_PORT = 8080;
 const eventEmitter = new EventEmitter();
 
 function appConfig(options, argv) {
+    const warehouseDeployment = getWarehouseDeployment();
     const mode = argv.mode || 'production';
+    if (warehouseDeployment.mode === 'development' && mode !== 'development') {
+        throw new Error('Local warehouse checkout cannot be built for production.');
+    }
     const isProduction = mode !== 'development';
     const outputFilename = `[name]${isProduction ? '-[contenthash:8]' : ''}`;
 
@@ -98,7 +103,6 @@ function appConfig(options, argv) {
                 runtimeChunk: 'single',
                 minimizer: [
                     (compiler) => {
-                        // eslint-disable-next-line global-require
                         const TerserPlugin = require('terser-webpack-plugin');
 
                         new TerserPlugin({
@@ -164,6 +168,12 @@ function appConfig(options, argv) {
                 crossOriginLoading: 'anonymous',
             },
             plugins: [
+                new DefinePlugin({
+                    'process.env.WAREHOUSE_CHECKOUT_MODE': JSON.stringify(warehouseDeployment.mode),
+                    'process.env.WAREHOUSE_CHECKOUT_STORES': JSON.stringify(
+                        JSON.stringify(warehouseDeployment.stores),
+                    ),
+                }),
                 new SubresourceIntegrityPlugin({
                     hashFuncNames: ['sha256'],
                     enabled: isProduction,
@@ -187,10 +197,18 @@ function appConfig(options, argv) {
                             // eslint-disable-next-line no-console
                             console.error('Manifest compilation errors:', compilation.errors);
                         }
-                    }
+                    },
                 }),
                 new BuildHookPlugin({
                     onSuccess() {
+                        writeFileSync(
+                            join(
+                                __dirname,
+                                isProduction ? 'dist' : 'build',
+                                'warehouse-build.json',
+                            ),
+                            JSON.stringify(warehouseDeployment, null, 2),
+                        );
                         eventEmitter.emit('app:done');
                     },
                     onError(errors) {
@@ -245,7 +263,6 @@ function appConfig(options, argv) {
                             {
                                 loader: 'sass-loader',
                                 options: {
-                                    // eslint-disable-next-line global-require
                                     implementation: require('sass'),
                                     sassOptions: {
                                         logger: {
@@ -445,7 +462,7 @@ function loaderConfig(options, argv) {
     });
 }
 
-module.exports = async function (options, argv) {
+module.exports = async function webpackConfiguration(options, argv) {
     const isMeasureSpeed = process.env.MEASURE_SPEED === 'true';
 
     const app = appConfig(options, argv);
@@ -454,7 +471,6 @@ module.exports = async function (options, argv) {
     const configArr = await Promise.all([app, loader]);
 
     if (isMeasureSpeed) {
-        // eslint-disable-next-line global-require
         const SpeedMeasurePlugin = require('speed-measure-webpack-plugin');
         const smp = new SpeedMeasurePlugin({
             outputFormat: 'human', // 'json', 'human', 'humanVerbose', or a function

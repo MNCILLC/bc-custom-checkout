@@ -1,6 +1,8 @@
 import { type CheckoutContextProps } from '@bigcommerce/checkout/contexts';
 import { isBuyNowCart } from '@bigcommerce/checkout/utility';
 
+import { localStorefrontUrl } from '../warehouse/local-navigation';
+
 import { type WithCheckoutCartSummaryProps } from './CartSummary';
 
 export default function mapToCartSummaryProps(
@@ -27,7 +29,7 @@ export default function mapToCartSummaryProps(
         isBuyNowCart: isBuyNowCart(checkout.cart),
         checkout,
         shopperCurrency: config.shopperCurrency,
-        cartUrl: config.links.cartLink,
+        cartUrl: localStorefrontUrl('/cart/', config.links.cartLink),
         storeCurrency: config.currency,
         storeCreditAmount: isStoreCreditApplied ? Math.min(grandTotal, storeCredit) : undefined,
     };

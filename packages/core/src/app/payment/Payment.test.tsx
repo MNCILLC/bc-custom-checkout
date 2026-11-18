@@ -51,6 +51,7 @@ import {
     createEmbeddedCheckoutStylesheet,
     createEmbeddedCheckoutSupport,
 } from '../embeddedCheckout';
+import * as warehouseSubmission from '../warehouse/submission';
 
 import { type PaymentContextProps } from './PaymentContext';
 
@@ -195,6 +196,85 @@ describe('Payment step', () => {
                 </LocaleProvider>
             </CheckoutProvider>
         );
+    });
+
+    it.each(['normal SDK', 'payment-specific callback'])(
+        'runs warehouse preflight before %s and stops on failure',
+        async (path) => {
+            const custom = jest.fn();
+
+            if (path === 'payment-specific callback') {
+                mockPaymentContextEffect = (context) => {
+                    context.setSubmit({ id: 'instore' } as PaymentMethod, custom);
+                };
+            }
+
+            checkoutService = checkout.use(CheckoutPreset.CheckoutWithShippingAndBilling);
+
+            const nativeSubmit = jest.spyOn(checkoutService, 'submitOrder');
+            const guard = jest
+                .spyOn(warehouseSubmission, 'submitWithWarehouseValidation')
+                .mockRejectedValue(new Error('Warehouse changed. Return to cart.'));
+
+            try {
+                render(<CheckoutTest {...defaultProps} />);
+                await checkout.waitForPaymentStep();
+                await userEvent.click(screen.getByRole('button', { name: /place order/i }));
+                await waitFor(() => expect(guard).toHaveBeenCalledTimes(1));
+                expect(nativeSubmit).not.toHaveBeenCalled();
+                expect(custom).not.toHaveBeenCalled();
+                expect(
+                    await screen.findByText('Warehouse changed. Return to cart.'),
+                ).toBeInTheDocument();
+            } finally {
+                guard.mockRestore();
+            }
+        },
+    );
+
+    it('never invokes payment finalization in a warehouse preview', async () => {
+        checkoutService = checkout.use(CheckoutPreset.CheckoutWithShippingAndBilling, {
+            checkout: {
+                ...checkoutWithShippingAndBilling,
+                consignments: checkoutWithShippingAndBilling.consignments.map((consignment) => ({
+                    ...consignment,
+                    selectedShippingOption: consignment.selectedShippingOption && {
+                        ...consignment.selectedShippingOption,
+                        type: 'shipping_carrier',
+                    },
+                })),
+            },
+        });
+
+        const finalize = jest.spyOn(checkoutService, 'finalizeOrderIfNeeded');
+
+        window.warehouseCheckout = {
+            version: 1,
+            preview: true,
+            cartId: defaultProps.checkoutId,
+            validation: {
+                endpoint: 'https://validator.example/validate',
+                token: 'test',
+                revision: 'revision',
+                expiresAt: 9999999999,
+            },
+            warehouse: {
+                id: 'origin',
+                label: 'Origin',
+                pickupLabel: 'Origin pickup',
+                locationId: 72,
+                pickupMethodId: 83,
+                allowShipping: true,
+            },
+        };
+
+        try {
+            render(<CheckoutTest {...defaultProps} />);
+            await checkout.waitForPaymentStep();
+            expect(finalize).not.toHaveBeenCalled();
+        } finally {
+            delete window.warehouseCheckout;
+        }
     });
 
     it('renders payment step with 2 offline payment methods', async () => {

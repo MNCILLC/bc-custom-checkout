@@ -34,3 +34,22 @@ describe('hasSelectedShippingOptions()', () => {
         ).toBe(true);
     });
 });
+
+
+describe('Powell pickup feasibility', () => {
+    it('accepts the native Powell selection without a shipping option', () => {
+        expect(hasSelectedShippingOptions([{
+            ...getConsignment(),
+            selectedShippingOption: undefined,
+            selectedPickupOption: { pickupMethodId: 2 },
+        }])).toBe(true);
+    });
+
+    it('does not treat a missing fulfillment choice as pickup', () => {
+        expect(hasSelectedShippingOptions([{
+            ...getConsignment(),
+            selectedShippingOption: undefined,
+            selectedPickupOption: undefined,
+        }])).toBe(false);
+    });
+});

@@ -81,6 +81,8 @@ import {
 } from '../common/error';
 import { EMPTY_ARRAY } from '../common/utility';
 import { TermsConditionsType } from '../termsConditions';
+import { getWarehouseCheckout } from '../warehouse/config';
+import { submitWithWarehouseValidation } from '../warehouse/submission';
 
 import {
     type B2BPaymentFormValues,
@@ -478,7 +480,49 @@ const Payment = (
         }
     };
 
-    const handleSubmit = useCallback(
+    const handleSubmit = async (values: PaymentFormValues) => {
+        try {
+            await submitWithWarehouseValidation(
+                checkoutService,
+                async () => {
+                    // Ensure any pending enhancedThemeV1 billing edit is saved before placing
+                    // the order. If billing is invalid, block the order — errors are
+                    // surfaced inline by the billing form.
+                    const ensureBillingAddressSaved = ensureBillingAddressSavedRef.current;
+
+                    if (ensureBillingAddressSaved) {
+                        const getGrandTotal = () =>
+                            checkoutService.getState().data.getCheckout()?.grandTotal;
+                        const grandTotalBeforeSave = getGrandTotal();
+
+                        setIsPriceChangedAlertVisible(false);
+
+                        if (!(await ensureBillingAddressSaved())) {
+                            return false;
+                        }
+
+                        // Saving the billing address can change tax: let the shopper review it.
+                        if (getGrandTotal() !== grandTotalBeforeSave) {
+                            setIsPriceChangedAlertVisible(true);
+
+                            return false;
+                        }
+                    }
+
+                    if (persistB2BMetadata) await props.refreshB2BPaymentMethods();
+
+                    return true;
+                },
+                () => executeSubmit(values),
+            );
+        } catch (error) {
+            props.onUnhandledError?.(
+                error instanceof Error ? error : new Error('Checkout verification failed.'),
+            );
+        }
+    };
+
+    const executeSubmit = useCallback(
         async (values: PaymentFormValues) => {
             const {
                 defaultMethod,
@@ -487,7 +531,6 @@ const Payment = (
                 onCartChangedError = noop,
                 onSubmit = noop,
                 onSubmitError = noop,
-                refreshB2BPaymentMethods,
                 submitOrder,
                 analyticsTracker,
             } = props;
@@ -524,35 +567,7 @@ const Payment = (
                 return customSubmit(orderValues);
             }
 
-            // Ensure any pending enhancedThemeV1 billing edit is saved before placing
-            // the order. If billing is invalid, block the order — errors are
-            // surfaced inline by the billing form.
-            const ensureBillingAddressSaved = ensureBillingAddressSavedRef.current;
-
-            if (ensureBillingAddressSaved) {
-                const getGrandTotal = () =>
-                    checkoutService.getState().data.getCheckout()?.grandTotal;
-                const grandTotalBeforeSave = getGrandTotal();
-
-                setIsPriceChangedAlertVisible(false);
-
-                if (!(await ensureBillingAddressSaved())) {
-                    return;
-                }
-
-                // Saving the billing address can change tax: let the shopper review it.
-                if (getGrandTotal() !== grandTotalBeforeSave) {
-                    setIsPriceChangedAlertVisible(true);
-
-                    return;
-                }
-            }
-
             try {
-                if (persistB2BMetadata) {
-                    await refreshB2BPaymentMethods();
-                }
-
                 const unsubscribeB2BContext = persistB2BMetadata
                     ? checkoutServiceSubscribe(
                           ({ data }) => {
@@ -878,50 +893,57 @@ const Payment = (
                     initialCheckoutState.data.getConfig()?.checkoutSettings,
                 );
 
-            try {
-                const state = await finalizeOrderIfNeeded({
-                    integrations: [
-                        createAfterpayPaymentStrategy,
-                        createBlueSnapV2PaymentStrategy,
-                        createCBAMPGSPaymentStrategy,
-                        createCheckoutComAPMPaymentStrategy,
-                        createCheckoutComCreditCardPaymentStrategy,
-                        createCheckoutComFawryPaymentStrategy,
-                        createCheckoutComIdealPaymentStrategy,
-                        createCheckoutComSepaPaymentStrategy,
-                        createClearpayPaymentStrategy,
-                        ...(isHandleUnsuccessful3dsCheckExperimentOn
-                            ? [
-                                  createGooglePayAdyenV2PaymentStrategy,
-                                  createGooglePayAdyenV3PaymentStrategy,
-                                  createGooglePayAuthorizeNetPaymentStrategy,
-                                  createGooglePayBigCommercePaymentsPaymentStrategy,
-                                  createGooglePayBraintreePaymentStrategy,
-                                  createGooglePayCheckoutComPaymentStrategy,
-                                  createGooglePayCybersourcePaymentStrategy,
-                                  createGooglePayOrbitalPaymentStrategy,
-                                  createGooglePayPPCPPaymentStrategy,
-                                  createGooglePayStripePaymentStrategy,
-                                  createGooglePayTdOnlineMartPaymentStrategy,
-                                  createGooglePayWorldpayAccessPaymentStrategy,
-                              ]
-                            : []),
-                        createOffsitePaymentStrategy,
-                        createPaypalExpressPaymentStrategy,
-                        createSagePayPaymentStrategy,
-                    ],
-                });
-                const order = state.data.getOrder();
+            // Preview must never finalize a returning payment. Production redirect
+            // recovery needs method-specific review; it is not a fresh submission.
+            if (!getWarehouseCheckout()?.preview) {
+                try {
+                    const state = await finalizeOrderIfNeeded({
+                        integrations: [
+                            createAfterpayPaymentStrategy,
+                            createBlueSnapV2PaymentStrategy,
+                            createCBAMPGSPaymentStrategy,
+                            createCheckoutComAPMPaymentStrategy,
+                            createCheckoutComCreditCardPaymentStrategy,
+                            createCheckoutComFawryPaymentStrategy,
+                            createCheckoutComIdealPaymentStrategy,
+                            createCheckoutComSepaPaymentStrategy,
+                            createClearpayPaymentStrategy,
+                            ...(isHandleUnsuccessful3dsCheckExperimentOn
+                                ? [
+                                      createGooglePayAdyenV2PaymentStrategy,
+                                      createGooglePayAdyenV3PaymentStrategy,
+                                      createGooglePayAuthorizeNetPaymentStrategy,
+                                      createGooglePayBigCommercePaymentsPaymentStrategy,
+                                      createGooglePayBraintreePaymentStrategy,
+                                      createGooglePayCheckoutComPaymentStrategy,
+                                      createGooglePayCybersourcePaymentStrategy,
+                                      createGooglePayOrbitalPaymentStrategy,
+                                      createGooglePayPPCPPaymentStrategy,
+                                      createGooglePayStripePaymentStrategy,
+                                      createGooglePayTdOnlineMartPaymentStrategy,
+                                      createGooglePayWorldpayAccessPaymentStrategy,
+                                  ]
+                                : []),
+                            createOffsitePaymentStrategy,
+                            createPaypalExpressPaymentStrategy,
+                            createSagePayPaymentStrategy,
+                        ],
+                    });
+                    const order = state.data.getOrder();
 
-                await persistB2BMetadataIfNeeded();
+                    await persistB2BMetadataIfNeeded();
 
-                logAfterpayRedirectOutcome();
-                onFinalize(order?.orderId);
-            } catch (error) {
-                logAfterpayRedirectOutcome(error);
+                    logAfterpayRedirectOutcome();
+                    onFinalize(order?.orderId);
+                } catch (error) {
+                    logAfterpayRedirectOutcome(error);
 
-                if (isErrorWithType(error) && error.type !== 'order_finalization_not_required') {
-                    onFinalizeError(error);
+                    if (
+                        isErrorWithType(error) &&
+                        error.type !== 'order_finalization_not_required'
+                    ) {
+                        onFinalizeError(error);
+                    }
                 }
             }
 

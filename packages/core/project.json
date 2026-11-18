@@ -17,15 +17,23 @@
           "target": "build",
           "dependencies": true
         }
+      ],
+      "inputs": [
+        "production",
+        "^production",
+        "{workspaceRoot}/webpack.config.js",
+        {
+          "env": "WAREHOUSE_CHECKOUT_MODE"
+        },
+        {
+          "env": "WAREHOUSE_CHECKOUT_STORES"
+        }
       ]
     },
     "prerelease-build": {
       "executor": "nx:run-commands",
       "options": {
-        "commands": [
-          "rm -rf dist/",
-          "PRERELEASE=prerelease webpack --mode production"
-        ],
+        "commands": ["rm -rf dist/", "PRERELEASE=prerelease webpack --mode production"],
         "parallel": false
       },
       "dependsOn": [
@@ -35,6 +43,17 @@
         {
           "target": "build",
           "dependencies": true
+        }
+      ],
+      "inputs": [
+        "production",
+        "^production",
+        "{workspaceRoot}/webpack.config.js",
+        {
+          "env": "WAREHOUSE_CHECKOUT_MODE"
+        },
+        {
+          "env": "WAREHOUSE_CHECKOUT_STORES"
         }
       ]
     },
@@ -51,6 +70,17 @@
           "target": "build",
           "dependencies": true
         }
+      ],
+      "inputs": [
+        "production",
+        "^production",
+        "{workspaceRoot}/webpack.config.js",
+        {
+          "env": "WAREHOUSE_CHECKOUT_MODE"
+        },
+        {
+          "env": "WAREHOUSE_CHECKOUT_STORES"
+        }
       ]
     },
     "serve": {
@@ -65,6 +95,17 @@
         {
           "target": "build",
           "dependencies": true
+        }
+      ],
+      "inputs": [
+        "production",
+        "^production",
+        "{workspaceRoot}/webpack.config.js",
+        {
+          "env": "WAREHOUSE_CHECKOUT_MODE"
+        },
+        {
+          "env": "WAREHOUSE_CHECKOUT_STORES"
         }
       ]
     },

@@ -25,6 +25,7 @@ import {
     createEmbeddedCheckoutStylesheet,
     createEmbeddedCheckoutSupport,
 } from '../embeddedCheckout';
+import WarehouseValidationGate from '../warehouse/WarehouseValidationGate';
 
 import Checkout from './Checkout';
 
@@ -77,13 +78,15 @@ const CheckoutApp = (props: CheckoutAppProps): ReactElement => {
                     <AnalyticsProvider checkoutService={checkoutService}>
                         <ExtensionProvider extensionService={extensionService}>
                             <ThemeProvider>
-                                <Checkout
-                                    {...props}
-                                    createEmbeddedMessenger={createEmbeddedCheckoutMessenger}
-                                    embeddedStylesheet={embeddedStylesheet}
-                                    embeddedSupport={embeddedSupport}
-                                    errorLogger={errorLogger}
-                                />
+                                <WarehouseValidationGate checkoutService={checkoutService}>
+                                    <Checkout
+                                        {...props}
+                                        createEmbeddedMessenger={createEmbeddedCheckoutMessenger}
+                                        embeddedStylesheet={embeddedStylesheet}
+                                        embeddedSupport={embeddedSupport}
+                                        errorLogger={errorLogger}
+                                    />
+                                </WarehouseValidationGate>
                             </ThemeProvider>
                         </ExtensionProvider>
                     </AnalyticsProvider>

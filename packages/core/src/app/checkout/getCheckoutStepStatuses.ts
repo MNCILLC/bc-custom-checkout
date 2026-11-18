@@ -15,6 +15,8 @@ import {
     hasUnassignedLineItems,
     itemsRequireShipping,
 } from '../shipping';
+import isWarehousePickup from '../shipping/isWarehousePickup';
+import { warehouseConsignmentsValid } from '../warehouse/config';
 
 import CheckoutStepType from './CheckoutStepType';
 
@@ -207,7 +209,11 @@ const getShippingStepStatus = createSelector(
         const hasOptions = consignments ? hasSelectedShippingOptions(consignments) : false;
         const hasUnassignedItems =
             cart && consignments ? hasUnassignedLineItems(consignments, cart.lineItems) : true;
-        const isComplete = hasAddress && hasOptions && !hasUnassignedItems;
+        const isComplete =
+            ((hasAddress && hasOptions) ||
+                (isWarehousePickup(consignments || []) &&
+                    warehouseConsignmentsValid(consignments || []))) &&
+            !hasUnassignedItems;
         const isRequired = itemsRequireShipping(cart, config);
         const isCustomShippingSelected =
             isExperimentEnabled(

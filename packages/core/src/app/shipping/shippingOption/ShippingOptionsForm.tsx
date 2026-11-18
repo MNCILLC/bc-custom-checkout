@@ -7,6 +7,7 @@ import { useAnalytics } from '@bigcommerce/checkout/contexts';
 import { TranslatedString } from '@bigcommerce/checkout/locale';
 
 import { withFormikExtended } from '../../common/form';
+import { warehouseShippingOptions } from '../../warehouse/config';
 import getRecommendedShippingOption from '../getRecommendedShippingOption';
 import { getShippingOptionIds } from '../utils';
 
@@ -56,7 +57,9 @@ const ShippingOptionsForm = (
             return;
         }
 
-        const { availableShippingOptions, id } = consignment;
+        const { id } = consignment;
+        const availableShippingOptions =
+            warehouseShippingOptions(consignment.availableShippingOptions) || [];
         const recommendedOption = getRecommendedShippingOption(availableShippingOptions);
         const singleShippingOption =
             availableShippingOptions.length === 1 && availableShippingOptions[0];
@@ -127,11 +130,14 @@ const ShippingOptionsForm = (
                             consignment.selectedShippingOption &&
                             consignment.selectedShippingOption.id
                         }
-                        shippingOptions={consignment.availableShippingOptions}
+                        shippingOptions={warehouseShippingOptions(
+                            consignment.availableShippingOptions,
+                        )}
                     />
 
                     {(!consignment.availableShippingOptions ||
-                        !consignment.availableShippingOptions.length) && (
+                        !warehouseShippingOptions(consignment.availableShippingOptions)
+                            ?.length) && (
                         <NoShippingOptions
                             isLoading={isLoading(consignment.id)}
                             message={invalidShippingMessage}

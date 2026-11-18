@@ -1,7 +1,14 @@
 import { type Address, type FormField, isExtraField } from '@bigcommerce/checkout-sdk/essential';
 import { type FormikProps, setNestedObjectValues, withFormik } from 'formik';
-import { omit } from 'lodash';
-import React, { type FocusEvent, useCallback, useContext, useEffect, useState } from 'react';
+import { isEqual, omit } from 'lodash';
+import React, {
+    type FocusEvent,
+    useCallback,
+    useContext,
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
 
 import { useCapabilities, useCheckout } from '@bigcommerce/checkout/contexts';
 import {
@@ -72,6 +79,9 @@ const PaymentBillingFormComponent = ({
     billingAddress,
     isLoading,
     isUsingMultiShipping,
+    isBillingSameAsShipping,
+    customerMessage,
+    setValues,
     setFieldValue,
     setTouched,
     validateForm,
@@ -89,6 +99,7 @@ const PaymentBillingFormComponent = ({
     const paymentContext = useContext(PaymentContext);
 
     const {
+        checkoutService,
         selectedState: { customer, config, cart, consignments, isUpdatingBillingAddress },
     } = useCheckout(({ data, statuses }) => ({
         customer: data.getCustomer(),
@@ -140,7 +151,9 @@ const PaymentBillingFormComponent = ({
     const hasShippableItems = getShippableItemsCount(cart) > 0;
     const shouldShowOrderComments = enableOrderComments && !hasShippableItems;
     const shouldShowSaveAddress = !hideSaveToAddressBookCheck && !isGuest;
+    const hasPickup = consignments?.some((consignment) => !!consignment.selectedPickupOption);
     const shouldShowBillingSameAsShipping =
+        !hasPickup &&
         !shouldRenderStaticAddress &&
         !hideBillingSameAsShippingCheck &&
         !isUsingMultiShipping &&
@@ -152,6 +165,47 @@ const PaymentBillingFormComponent = ({
         !restrictManualAddressEntry &&
         !hasValidCustomerAddress &&
         (!isAddressSelectVisible || isEnteringNewAddress || !!billingAddress?.address1);
+
+    // A save response may describe an older draft. Keep edited fields owned by the
+    // shopper until an explicit address replacement; even a late acknowledgement
+    // must not make a subsequent older response overwrite those fields.
+    const editedFields = useRef(new Set<string>());
+    const incomingValues = {
+        ...getBillingFormInitialValues(getFields, billingAddress, customerMessage),
+        billingSameAsShipping: isBillingSameAsShipping,
+    };
+    const previousIncoming = useRef(incomingValues);
+    const mirrorShipping = shouldShowBillingSameAsShipping && isBillingSameAsShipping;
+    const previousMirrorShipping = useRef(mirrorShipping);
+
+    useEffect(() => {
+        if (
+            isEqual(previousIncoming.current, incomingValues) &&
+            previousMirrorShipping.current === mirrorShipping
+        )
+            return;
+
+        previousIncoming.current = incomingValues;
+        previousMirrorShipping.current = mirrorShipping;
+        if (mirrorShipping) editedFields.current.clear();
+
+        void setValues((current) => {
+            const preserved = Object.fromEntries(
+                Object.entries(current).filter(([name]) => editedFields.current.has(name)),
+            );
+
+            return { ...incomingValues, ...preserved };
+        });
+    });
+
+    const markEdited = (name: string) => {
+        if (name && name !== 'billingSameAsShipping') editedFields.current.add(name.split('.')[0]);
+    };
+    const setEditedFieldValue: typeof setFieldValue = (name, value, shouldValidate) => {
+        markEdited(name);
+
+        return setFieldValue(name, value, shouldValidate);
+    };
 
     const ensureBillingAddressSaved = useCallback(async (): Promise<boolean> => {
         if (isLoading || isResettingAddress) {
@@ -221,6 +275,19 @@ const PaymentBillingFormComponent = ({
                 isConsignmentAddress ? omit(address, ['id', 'type']) : address,
                 values.orderComment,
             );
+
+            const selected = checkoutService.getState().data.getBillingAddress() ?? address;
+            const replacement = {
+                ...getBillingFormInitialValues(getFields, selected as Address, values.orderComment),
+                billingSameAsShipping: values.billingSameAsShipping,
+            };
+
+            // Selecting an address (including "new address") intentionally replaces
+            // the draft. Protect that choice from older autosave responses as well.
+            editedFields.current = new Set(
+                Object.keys(replacement).filter((name) => name !== 'billingSameAsShipping'),
+            );
+            await setValues(replacement);
         } catch (error) {
             if (error instanceof Error) {
                 onUnhandledError(error);
@@ -259,7 +326,12 @@ const PaymentBillingFormComponent = ({
             return;
         }
 
+        markEdited(fieldName);
+
         if (fieldName === 'countryCode' && value) {
+            void setEditedFieldValue('stateOrProvince', '');
+            void setEditedFieldValue('stateOrProvinceCode', '');
+
             const {
                 billingSameAsShipping: _billingSameAsShipping,
                 orderComment,
@@ -271,6 +343,7 @@ const PaymentBillingFormComponent = ({
 
         // Clear the name so a stale one can't mask the new code.
         if (fieldName === 'stateOrProvinceCode') {
+            void setEditedFieldValue('stateOrProvince', '');
             persistTaxField('stateOrProvinceCode', value, { stateOrProvince: '' });
         }
     };
@@ -297,7 +370,11 @@ const PaymentBillingFormComponent = ({
     };
 
     return (
-        <div className="checkout-billing-form" data-test="checkout-billing-form">
+        <div
+            className="checkout-billing-form"
+            data-test="checkout-billing-form"
+            onChangeCapture={(event) => markEdited((event.target as HTMLInputElement).name)}
+        >
             {shouldShowBillingSameAsShipping && (
                 <BillingSameAsShippingField
                     disabled={isUpdatingBillingAddress}
@@ -346,7 +423,7 @@ const PaymentBillingFormComponent = ({
                                         countryCode={values.countryCode}
                                         formFields={editableFormFields}
                                         onChange={handleAddressFieldChange}
-                                        setFieldValue={setFieldValue}
+                                        setFieldValue={setEditedFieldValue}
                                         shouldShowSaveAddress={shouldShowSaveAddress}
                                         type={AddressType.Billing}
                                     />
@@ -382,6 +459,6 @@ export const PaymentBillingForm = withLanguage(
             methodId,
         }: PaymentBillingFormProps & WithLanguageProps) =>
             getBillingFormValidationSchema(language, getFields, methodId),
-        enableReinitialize: true,
+        enableReinitialize: false,
     })(PaymentBillingFormComponent),
 );

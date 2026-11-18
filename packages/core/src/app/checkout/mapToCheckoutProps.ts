@@ -4,6 +4,7 @@ import { createSelector } from 'reselect';
 import { type CheckoutContextProps } from '@bigcommerce/checkout/contexts';
 
 import { EMPTY_ARRAY } from '../common/utility';
+import { localStorefrontUrl } from '../warehouse/local-navigation';
 
 import { type WithCheckoutProps } from './Checkout';
 import getCheckoutStepStatuses from './getCheckoutStepStatuses';
@@ -55,9 +56,9 @@ export default function mapToCheckoutProps({
         isShowingWalletButtonsOnTop: walletButtonsOnTopFlag,
         loadCheckout: checkoutService.loadCheckout,
         loadPaymentMethodByIds: checkoutService.loadPaymentMethodByIds,
-        loginUrl,
-        cartUrl,
-        createAccountUrl,
+        loginUrl: localStorefrontUrl('/login?redirectTo=/checkout/', loginUrl),
+        cartUrl: localStorefrontUrl('/cart/', cartUrl),
+        createAccountUrl: localStorefrontUrl('/register/', createAccountUrl),
         promotions,
         subscribeToConsignments: subscribeToConsignmentsSelector({
             checkoutService,
