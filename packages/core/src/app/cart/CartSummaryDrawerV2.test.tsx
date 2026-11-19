@@ -19,6 +19,7 @@ import { getCheckout } from '../checkout/checkouts.mock';
 import { createErrorLogger } from '../common/error';
 import { getStoreConfig } from '../config/config.mock';
 import { getCustomer } from '../customer/customers.mock';
+import { ShippingQuoteSummaryContext } from '../warehouse/ShippingQuoteSummary';
 
 import CartSummaryDrawerV2 from './CartSummaryDrawerV2';
 import { getPicklistItem } from './lineItem.mock';
@@ -34,6 +35,7 @@ describe('CartSummaryDrawerV2 Component', () => {
     });
 
     const renderComponent = (checkout: Checkout = getCheckout()) => {
+        let quote: React.ContextType<typeof ShippingQuoteSummaryContext> = { managed: false };
         const checkoutService = createCheckoutService();
         const extensionService = new ExtensionService(checkoutService, createErrorLogger());
 
@@ -48,7 +50,9 @@ describe('CartSummaryDrawerV2 Component', () => {
             <CheckoutProvider checkoutService={checkoutService}>
                 <LocaleContext.Provider value={localeContext}>
                     <ExtensionProvider extensionService={extensionService}>
-                        <CartSummaryDrawerV2 isMultiShippingMode={false} />
+                        <ShippingQuoteSummaryContext.Provider value={quote}>
+                            <CartSummaryDrawerV2 isMultiShippingMode={false} />
+                        </ShippingQuoteSummaryContext.Provider>
                     </ExtensionProvider>
                 </LocaleContext.Provider>
             </CheckoutProvider>
@@ -56,7 +60,15 @@ describe('CartSummaryDrawerV2 Component', () => {
 
         const view = render(buildUi());
 
-        return { ...view, getCheckoutMock, rerenderComponent: () => view.rerender(buildUi()) };
+        return {
+            ...view,
+            getCheckoutMock,
+            rerenderComponent: () => view.rerender(buildUi()),
+            setQuote: (next: typeof quote) => {
+                quote = next;
+                view.rerender(buildUi());
+            },
+        };
     };
 
     const getCollapsedBar = () => screen.getByTestId('cart-summary-collapsed-bar');
@@ -206,8 +218,83 @@ describe('CartSummaryDrawerV2 Component', () => {
         expectSheetOpen();
 
         expect(getSheet()).not.toHaveStyle({ transform: 'translateY(100%)' });
-        expect(getSheet()).toHaveClass('cart-summary-sheet--afterOpen');
+        await waitFor(() => expect(getSheet()).toHaveClass('cart-summary-sheet--afterOpen'));
+        expect(getSheet()).not.toHaveClass('cart-summary-sheet--beforeClose');
     });
+
+    it.each([0, 32])(
+        'cancels the old close timer when reopened after %i ms of opening',
+        (openingTime) => {
+            jest.useFakeTimers();
+
+            const frames = jest
+                .spyOn(window, 'requestAnimationFrame')
+                .mockImplementation((callback) =>
+                    window.setTimeout(() => callback(performance.now()), 16),
+                );
+            const cancelFrame = jest
+                .spyOn(window, 'cancelAnimationFrame')
+                .mockImplementation(window.clearTimeout);
+
+            try {
+                renderComponent();
+                getCollapsedBar().focus();
+                fireEvent.click(getCollapsedBar());
+                act(() => jest.advanceTimersByTime(openingTime));
+
+                const handle = screen.getByTestId('cart-summary-sheet-handle');
+
+                fireEvent.pointerDown(handle, { pointerId: 1, clientY: 100 });
+                fireEvent.pointerUp(handle, { pointerId: 1, clientY: 200 });
+                expect(getSheet()).toHaveClass('cart-summary-sheet--beforeClose');
+                fireEvent.click(getCollapsedBar());
+                act(() => jest.advanceTimersByTime(1000));
+                expectSheetOpen();
+                expect(getSheet()).toHaveClass('cart-summary-sheet--afterOpen');
+                expect(getSheet()).not.toHaveClass('cart-summary-sheet--beforeClose');
+                expect(getSheet()).not.toHaveStyle({ transform: 'translateY(100%)' });
+                expect(document.body).toHaveClass('has-activeCartSummarySheet');
+                expect(getSheet()).toHaveFocus();
+
+                fireEvent.keyDown(getSheet(), { key: 'Escape', code: 'Escape', keyCode: 27 });
+                act(() => jest.advanceTimersByTime(1000));
+                expect(screen.queryByTestId('cart-summary-sheet')).not.toBeInTheDocument();
+                expect(document.body).not.toHaveClass('has-activeCartSummarySheet');
+                expect(getCollapsedBar()).toHaveFocus();
+            } finally {
+                frames.mockRestore();
+                cancelFrame.mockRestore();
+                jest.useRealTimers();
+            }
+        },
+    );
+
+    it.each(['Recalculating shipping…', 'Shipping unavailable — retry'])(
+        'hides stale mobile prices during %s and restores them on recovery',
+        async (shipping) => {
+            const { setQuote } = renderComponent();
+
+            setQuote({ managed: true, shipping, total: 'Pending delivery confirmation' });
+            expect(
+                within(getCollapsedBar()).queryByTestId('cart-outstanding-balance'),
+            ).not.toBeInTheDocument();
+            expect(within(getCollapsedBar()).getByRole('status')).toHaveTextContent(
+                'Pending delivery confirmation',
+            );
+            await userEvent.click(getCollapsedBar());
+            expect(within(getSheet()).getByTestId('cart-shipping')).toHaveTextContent(shipping);
+            expect(within(getSheet()).getByTestId('cart-total')).toHaveTextContent(
+                'Pending delivery confirmation',
+            );
+            setQuote({ managed: true });
+            expect(
+                within(getCollapsedBar()).getByTestId('cart-outstanding-balance'),
+            ).toHaveTextContent('$212.80');
+            expect(within(getSheet()).getByTestId('cart-total')).not.toHaveTextContent(
+                'Pending delivery confirmation',
+            );
+        },
+    );
 
     it('keeps the sheet open when the handle swipe is too short', async () => {
         renderComponent();

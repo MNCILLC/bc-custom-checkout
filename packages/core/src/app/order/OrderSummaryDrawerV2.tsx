@@ -52,10 +52,13 @@ export const OrderSummaryDrawerV2: FunctionComponent<OrderSummaryDrawerV2Props> 
     const { nonBundledItems } = getNonBundledItems(lineItems, bundledItems);
 
     const [rootElement, setRootElement] = useState<HTMLDivElement | null>(null);
-    const [isExpanded, setIsExpanded] = useState(false);
+    const [{ isExpanded, generation }, setSheetState] = useState({
+        isExpanded: false,
+        generation: 0,
+    });
 
     const closeSheet = () => {
-        setIsExpanded(false);
+        setSheetState((state) => ({ ...state, isExpanded: false }));
     };
 
     const { setSheetElement, handleProps: sheetHandleProps } = useSheetDismissDrag(
@@ -67,7 +70,12 @@ export const OrderSummaryDrawerV2: FunctionComponent<OrderSummaryDrawerV2Props> 
     const cartHeading = language.translate('cart.cart_heading');
 
     const toggleSheet = () => {
-        setIsExpanded((currentState) => !currentState);
+        // A new modal instance cancels the previous close timer and animation frame,
+        // including a close/reopen before react-modal has reached its afterOpen state.
+        setSheetState((state) => ({
+            isExpanded: !state.isExpanded,
+            generation: state.generation + (state.isExpanded ? 0 : 1),
+        }));
     };
 
     const handleBarKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -141,6 +149,7 @@ export const OrderSummaryDrawerV2: FunctionComponent<OrderSummaryDrawerV2Props> 
                     contentRef={setSheetElement}
                     id="cart-summary-sheet"
                     isOpen={isExpanded}
+                    key={generation}
                     onRequestClose={closeSheet}
                     overlayClassName={{
                         base: 'cart-summary-backdrop',
