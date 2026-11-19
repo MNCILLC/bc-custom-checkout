@@ -96,3 +96,18 @@ it('permits localhost endpoints only in development mode and rejects production 
         Object.assign(process.env, { NODE_ENV: original });
     }
 });
+
+it('allows freight only on the store validator backend origin', () => {
+    expect(
+        readWarehouseDeployment(
+            'staging',
+            JSON.stringify([{ ...stores[0], freightEndpoint: 'https://store-a.example/freight' }]),
+        ).stores[0].freightEndpoint,
+    ).toBe('https://store-a.example/freight');
+    expect(() =>
+        readWarehouseDeployment(
+            'staging',
+            JSON.stringify([{ ...stores[0], freightEndpoint: 'https://other.example/freight' }]),
+        ),
+    ).toThrow();
+});

@@ -4,6 +4,7 @@ export interface WarehouseDeployment {
         checkoutOrigin: string;
         validationEndpoint: string;
         initializationEndpoint?: string;
+        freightEndpoint?: string;
     }>;
 }
 export function readWarehouseDeployment(mode?: string, encodedStores?: string): WarehouseDeployment;

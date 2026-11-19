@@ -31,6 +31,15 @@ function readWarehouseDeployment(mode = 'off', encodedStores = '[]') {
         const stores = input.map((store) => ({
             checkoutOrigin: httpsUrl(store.checkoutOrigin, true),
             validationEndpoint: httpsUrl(store.validationEndpoint, false, mode === 'development'),
+            ...(store.freightEndpoint === undefined
+                ? {}
+                : {
+                      freightEndpoint: httpsUrl(
+                          store.freightEndpoint,
+                          false,
+                          mode === 'development',
+                      ),
+                  }),
             ...(store.initializationEndpoint === undefined
                 ? {}
                 : {
@@ -41,6 +50,16 @@ function readWarehouseDeployment(mode = 'off', encodedStores = '[]') {
                       ),
                   }),
         }));
+
+        if (
+            stores.some(
+                (store) =>
+                    store.freightEndpoint &&
+                    new URL(store.freightEndpoint).origin !==
+                        new URL(store.validationEndpoint).origin,
+            )
+        )
+            throw new Error('Freight and validation must use the same backend origin');
 
         if (new Set(stores.map((store) => store.checkoutOrigin)).size !== stores.length)
             throw new Error('Ambiguous checkout origin');

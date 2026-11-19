@@ -1,9 +1,12 @@
+import { waitFor } from '@testing-library/react';
 import React from 'react';
 
 import * as contexts from '@bigcommerce/checkout/contexts';
 import { getCart, getCheckout, getStoreConfig } from '@bigcommerce/checkout/test-mocks';
 import { render } from '@bigcommerce/checkout/test-utils';
 
+import * as warehouseConfig from '../../warehouse/config';
+import * as freight from '../../warehouse/freight';
 import CheckoutStepType from '../CheckoutStepType';
 
 import ShippingStep, { type ShippingStepProps } from './ShippingStep';
@@ -12,6 +15,8 @@ jest.mock('../../shipping/Shipping', () => ({
     __esModule: true,
     default: () => <div data-test="shipping" />,
 }));
+
+jest.mock('../../warehouse/FreightDelivery', () => ({ __esModule: true, default: () => <div /> }));
 
 describe('ShippingStep', () => {
     const defaultProps: ShippingStepProps = {
@@ -58,5 +63,25 @@ describe('ShippingStep', () => {
         const { container } = render(<ShippingStep {...defaultProps} {...propOverrides} />);
 
         expect(container).toBeEmptyDOMElement();
+    });
+    it('opens delivery review once for an already prepared native checkout', async () => {
+        const onEdit = jest.fn();
+
+        jest.spyOn(freight, 'freightEndpoint').mockReturnValue('https://backend.invalid/freight');
+        jest.spyOn(warehouseConfig, 'getWarehouseCheckout').mockReturnValue({
+            warehouse: { allowShipping: true, label: 'Origin', pickupLabel: 'Origin pickup' },
+        } as warehouseConfig.WarehouseCheckoutConfig);
+        mockCheckoutState({ checkout: getCheckout(), config: getStoreConfig() });
+
+        const props = {
+            ...defaultProps,
+            onEdit,
+            step: { ...defaultProps.step, isActive: false, isComplete: true, isEditable: true },
+        };
+        const view = render(<ShippingStep {...props} />);
+
+        await waitFor(() => expect(onEdit).toHaveBeenCalledWith(CheckoutStepType.Shipping));
+        view.rerender(<ShippingStep {...props} />);
+        expect(onEdit).toHaveBeenCalledTimes(1);
     });
 });

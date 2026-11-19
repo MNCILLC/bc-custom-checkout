@@ -1,5 +1,5 @@
 import type { AddressRequestBody, Cart, Consignment } from '@bigcommerce/checkout-sdk/essential';
-import React, { lazy, useEffect, useState } from 'react';
+import React, { lazy, useEffect, useRef, useState } from 'react';
 
 import { useCheckout, useThemeContext } from '@bigcommerce/checkout/contexts';
 import { TranslatedString } from '@bigcommerce/checkout/locale';
@@ -10,6 +10,12 @@ import { type ShippingProps, ShippingSummary } from '../../shipping';
 import isWarehousePickup from '../../shipping/isWarehousePickup';
 import { shouldShowMultiShippingToggle } from '../../shipping/utils';
 import { getWarehouseCheckout } from '../../warehouse/config';
+import {
+    approveFreightPreferences,
+    freightEndpoint,
+    saveFreightPreferences,
+} from '../../warehouse/freight';
+import FreightDelivery from '../../warehouse/FreightDelivery';
 import { warehouseSubmissionInProgress } from '../../warehouse/submissionState';
 import { beginWarehouseTransition, validateCurrentWarehouse } from '../../warehouse/validation';
 import CheckoutStep from '../CheckoutStep';
@@ -61,32 +67,56 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
     const isPickup = isWarehousePickup(consignments);
     const [switching, setSwitching] = useState(false);
     const [switchError, setSwitchError] = useState('');
+    const [freightReady, setFreightReady] = useState(!freightEndpoint());
+    const reviewedCart = useRef<string>();
     const warehouse = getWarehouseCheckout()?.warehouse;
+
+    // Native pickup may already be prepared by the authenticated storefront handoff.
+    // Open delivery once so the shopper reviews preferences before payment.
+    useEffect(() => {
+        if (
+            warehouse &&
+            freightEndpoint() &&
+            checkout &&
+            step.isComplete &&
+            step.isEditable &&
+            reviewedCart.current !== checkout.id
+        ) {
+            reviewedCart.current = checkout.id;
+            onEdit(step.type);
+        }
+    }, [checkout, onEdit, step.isComplete, step.isEditable, step.type, warehouse]);
+
     const matchingPickup =
         isPickup &&
         (!warehouse ||
             consignments[0].selectedPickupOption?.pickupMethodId === warehouse.pickupMethodId);
 
-    const changeFulfillment = async (pickup: boolean) => {
+    const changeFulfillment = async (
+        pickup: boolean,
+        force = false,
+        codes?: string[],
+    ): Promise<boolean> => {
         if (
             !warehouse ||
             !cart ||
             !checkout ||
             switching ||
             warehouseSubmissionInProgress() ||
-            (pickup && matchingPickup) ||
-            (!pickup && !isPickup)
+            (!force && ((pickup && matchingPickup) || (!pickup && !isPickup)))
         ) {
-            return;
+            return false;
         }
 
         setSwitching(true);
+        setFreightReady(!freightEndpoint());
         setSwitchError('');
 
         const endTransition = beginWarehouseTransition();
 
         try {
             await validateCurrentWarehouse(pickup ? 'pickup' : 'shipping');
+            await saveFreightPreferences(pickup, codes);
 
             const cacheKey = `warehouse-preview-address:${checkout.id}`;
             const shipping = consignments.find((consignment) => !consignment.selectedPickupOption);
@@ -123,17 +153,41 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
                     },
                 ]);
             }
+
+            await approveFreightPreferences();
+            setFreightReady(true);
+
+            return true;
         } catch (error) {
             setSwitchError(
                 error instanceof Error ? error.message : 'Unable to change fulfillment.',
             );
-            await checkoutService.loadCheckout(checkout.id);
+
+            try {
+                await checkoutService.loadCheckout(checkout.id);
+            } catch {
+                // Keep the delivery step blocked if recovery also fails.
+            }
+
+            return false;
         } finally {
             endTransition();
             window.dispatchEvent(new Event('focus'));
             setSwitching(false);
         }
     };
+
+    const freightEditor = (
+        <FreightDelivery
+            busy={switching}
+            onApply={(codes) =>
+                changeFulfillment(isPickup || !warehouse?.allowShipping, true, codes)
+            }
+            onReady={() => setFreightReady(true)}
+            onUnready={() => setFreightReady(false)}
+            pickup={isPickup || !warehouse?.allowShipping}
+        />
+    );
 
     const fulfillmentChoice = warehouse?.allowShipping ? (
         <fieldset
@@ -193,18 +247,21 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
                 onExpanded={onExpanded}
             >
                 <p>This order will be collected at your selected warehouse.</p>
+                {freightEditor}
                 {switchError && <p role="alert">{switchError}</p>}
-                <button
-                    className="button button--primary optimizedCheckout-buttonPrimary"
-                    data-test="warehouse-prepare-pickup"
-                    disabled={switching}
-                    onClick={() => {
-                        changeFulfillment(true);
-                    }}
-                    type="button"
-                >
-                    {switching ? 'Preparing pickup…' : `Confirm ${warehouse.pickupLabel}`}
-                </button>
+                {!freightEndpoint() && (
+                    <button
+                        className="button button--primary optimizedCheckout-buttonPrimary"
+                        data-test="warehouse-prepare-pickup"
+                        disabled={switching}
+                        onClick={() => {
+                            changeFulfillment(true);
+                        }}
+                        type="button"
+                    >
+                        {switching ? 'Preparing pickup…' : `Confirm ${warehouse.pickupLabel}`}
+                    </button>
+                )}
             </CheckoutStep>
         );
     }
@@ -232,10 +289,11 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
             >
                 {fulfillmentChoice}
                 {details}
+                {freightEditor}
                 <button
                     className="button button--primary optimizedCheckout-buttonPrimary"
                     data-test="warehouse-pickup-continue"
-                    disabled={switching}
+                    disabled={switching || !freightReady}
                     onClick={() => navigateNextStep(false)}
                     type="button"
                 >
@@ -279,7 +337,8 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
             }
         >
             {fulfillmentChoice}
-            {!switching && (
+            {freightEditor}
+            {!switching && freightReady && (
                 <LazyContainer loadingSkeleton={<AddressFormSkeleton />}>
                     <Shipping
                         cartHasChanged={cartHasChanged}

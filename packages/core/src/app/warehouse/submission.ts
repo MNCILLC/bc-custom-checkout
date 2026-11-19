@@ -1,6 +1,7 @@
 import { type CheckoutService } from '@bigcommerce/checkout-sdk';
 
 import { getWarehouseCheckout, warehouseConsignmentsValid } from './config';
+import { assertFreightReady, freightFingerprint } from './freight';
 import { createSubmissionGuard } from './submissionGuard';
 import { setWarehouseSubmissionInProgress } from './submissionState';
 import { validateCurrentWarehouse, warehouseTransitionInProgress } from './validation';
@@ -68,6 +69,7 @@ export async function submitWithWarehouseValidation<T>(
 
             return JSON.stringify({
                 snapshot: submissionSnapshot(service),
+                freight: freightFingerprint(),
                 checkoutVersion: data.getCheckout()?.version,
                 billing: data.getBillingAddress(),
                 consignments: data.getConsignments(),
@@ -79,7 +81,9 @@ export async function submitWithWarehouseValidation<T>(
             if (!warehouseConsignmentsValid(service.getState().data.getConsignments() || []))
                 throw new Error('Select a delivery option for your warehouse before continuing.');
 
+            await assertFreightReady(service);
             await validateCurrentWarehouse(undefined, submissionSnapshot(service));
+            await assertFreightReady(service);
         },
         execute: async () => {
             // This milestone stays non-purchasable, even if the DOM guard is bypassed.

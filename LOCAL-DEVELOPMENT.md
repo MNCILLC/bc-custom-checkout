@@ -14,3 +14,19 @@ Public configuration uses `WAREHOUSE_CHECKOUT_MODE=development` and `WAREHOUSE_C
 Development mode permits HTTP only for localhost:3000 backend endpoints and rejects production builds. Staging retains HTTPS requirements. For another store, supply its checkout-origin mapping and a compatible authenticated warehouse backend. Keep purchasing blocked until separately authorized and validated.
 
 The prior checkout-powell-poc path is a compatibility symlink. Existing Git history and uncommitted work were preserved. `npm run dev:upstream` retains the original upstream dev command. The root Catalyst LOCAL-DEVELOPMENT.md documents the sandbox activation and private rollback backups.
+
+## Checkout delivery preferences
+
+The optional `freightEndpoint` on each `WAREHOUSE_CHECKOUT_STORES` entry enables delivery-service controls in the delivery step. It must use the same backend origin as `validationEndpoint`. The standalone checkout receives only a short-lived cart capability; the Freight App token stays on the backend. Other stores can omit this field or implement the same contract on their own backend.
+
+For this local workflow, set `freightEndpoint` to `http://localhost:3000/api/warehouse/freight`. Catalyst also needs `WAREHOUSE_FREIGHT_ENABLED=true` and its existing private `FREIGHT_APP_URL`, `FREIGHT_APP_CHECKOUT_TOKEN`, and `BIGCOMMERCE_STORE_HASH`. Restart both dev servers after changing environment configuration.
+
+The endpoint accepts POST `{cartId, revision}` to load preferences and POST `{cartId, revision, update:{selection:{fulfillmentMethod:"ship"|"pickup", accessorials:string[]}, expectedVersion:number}}` to save. Both require the initialized cart capability in the Authorization Bearer header and the allowed checkout Origin. The response is `{version:1, cartId, revision, preferences:null|{fulfillmentMethod,accessorials,version}, services:[{code,label,description}]}`. Responses are not cached. Conflicts return 409 and require the shopper to reload/review; outages fail closed.
+
+Applying shipping options saves them first, replaces existing consignments to discard the previous selected rate, and confirms the preference version before showing native shipping. Pickup clears accessorials and creates a native pickup consignment. Dirty or unconfirmed options block the submission wrapper. Submission checks the preference version and fulfillment mode again before and after warehouse validation. The development preview still refuses to submit an order.
+
+This is not an atomic transaction with BigCommerce order submission: the previously documented native SDK bypass/race boundary remains. Warehouse revision checks detect changes during remote preference writes but cannot undo a write already accepted by the Freight App. Equivalent immediate retries after a lost write response reuse the saved version; conflicting stale updates are rejected. A full page reload requires reviewing delivery preferences again.
+
+Rollback locally: remove `freightEndpoint` from the checkout mapping and restart its dev server, then disable `WAREHOUSE_FREIGHT_ENABLED`. This does not migrate or delete saved preferences. The legacy non-warehouse cart flow remains available unchanged.
+
+For fresh pickup-only carts, the storefront handoff must attach native pickup before redirecting to BigCommerce; otherwise native checkout loading can reject stock held only at that location. Catalyst performs this after session/stock authorization. The checkout opens delivery review once for a prepared cart, so a native completed consignment does not skip the preference confirmation UI. This requirement is part of the backend integration contract for other storefronts as well.
