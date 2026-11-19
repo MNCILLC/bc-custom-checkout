@@ -207,7 +207,11 @@ const PaymentForm: FunctionComponent<
     }
 
     return (
-        <Form className="checkout-form" testId="payment-form">
+        <Form
+            className="checkout-form"
+            data-warehouse-validated-submit="true"
+            testId="payment-form"
+        >
             {usableStoreCredit > 0 && !disableStoreCredit && (
                 <StoreCreditField
                     availableStoreCredit={availableStoreCredit}

@@ -214,6 +214,15 @@ without mounting the SDK checkout app. A valid handoff must also receive a
 matching authenticated validator response before the app mounts. The existing
 validation gate continues checking during editing and submission.
 
+The standard payment form opts into the validated submission path with
+`data-warehouse-validated-submit="true"`. With a valid initialized warehouse,
+normal button clicks and keyboard form submissions reach Formik, billing save,
+Freight and warehouse validation. The final preview executor still refuses to
+place an order unless the separate cart-scoped Check authorization is enabled.
+Unmarked forms, provider-specific controls, and missing/invalid initialization
+remain blocked by the document capture guard. The marker routes UI events; it
+is not a server-side authorization mechanism.
+
 No staging purchase is enabled. The DOM purchase guards remain active even if
 the handoff is removed, the submission wrapper rejects missing required config,
 and the existing preview executor/finalization guards remain in place. Backend

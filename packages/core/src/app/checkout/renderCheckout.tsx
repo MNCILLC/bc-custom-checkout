@@ -2,7 +2,6 @@ import React from 'react';
 import { render, unmountComponentAtNode } from 'react-dom';
 
 import { configurePublicPath } from '../common/bundler';
-import { canSubmitCheckTest } from '../warehouse/checkTest';
 import { getWarehouseCheckout, validateWarehouseCheckout } from '../warehouse/config';
 import { getWarehouseDeployment } from '../warehouse/deployment';
 import {
@@ -11,6 +10,7 @@ import {
     warehouseInitializationEndpoint,
 } from '../warehouse/initialization';
 import { showLocalCheckoutNotice } from '../warehouse/local-navigation';
+import { installPurchaseGuards } from '../warehouse/purchaseGuards';
 import { validateCurrentWarehouse } from '../warehouse/validation';
 
 import { type CheckoutAppProps } from './CheckoutApp';
@@ -20,52 +20,6 @@ export type RenderCheckoutOptions = CheckoutAppProps;
 export type RenderCheckout = typeof renderCheckout;
 
 const initializations = new WeakMap<Element, symbol>();
-let purchaseGuardsInstalled = false;
-
-function installPurchaseGuards() {
-    if (purchaseGuardsInstalled) return;
-    purchaseGuardsInstalled = true;
-
-    const blocked = () => {
-        try {
-            return (
-                (getWarehouseDeployment().mode !== 'off' || !!window.warehouseCheckout) &&
-                !canSubmitCheckTest()
-            );
-        } catch {
-            return true;
-        }
-    };
-
-    document.addEventListener(
-        'submit',
-        (event) => {
-            if (
-                blocked() &&
-                event.target instanceof Element &&
-                event.target.querySelector('#checkout-payment-continue')
-            ) {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-            }
-        },
-        true,
-    );
-    document.addEventListener(
-        'click',
-        (event) => {
-            if (
-                blocked() &&
-                event.target instanceof Element &&
-                event.target.closest('#checkout-payment-continue')
-            ) {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-            }
-        },
-        true,
-    );
-}
 
 export default function renderCheckout({
     containerId,
