@@ -514,6 +514,22 @@ const Payment = (
                     return true;
                 },
                 () => executeSubmit(values),
+                () => {
+                    const method = selectedMethodRef.current;
+                    const request = mapToOrderRequestBody(values, props.isPaymentDataRequired());
+
+                    return {
+                        methodId: request.payment?.methodId,
+                        gatewayId: request.payment?.gatewayId,
+                        selectedMethodId: method?.id,
+                        customSubmit: !!(
+                            method &&
+                            state.submitFunctions[
+                                getUniquePaymentMethodId(method.id, method.gateway)
+                            ]
+                        ),
+                    };
+                },
             );
         } catch (error) {
             props.onUnhandledError?.(

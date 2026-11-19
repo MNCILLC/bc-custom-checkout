@@ -28,28 +28,41 @@ function readWarehouseDeployment(mode = 'off', encodedStores = '[]') {
 
         if (!Array.isArray(input) || !input.length) throw new Error('Missing stores');
 
-        const stores = input.map((store) => ({
-            checkoutOrigin: httpsUrl(store.checkoutOrigin, true),
-            validationEndpoint: httpsUrl(store.validationEndpoint, false, mode === 'development'),
-            ...(store.freightEndpoint === undefined
-                ? {}
-                : {
-                      freightEndpoint: httpsUrl(
-                          store.freightEndpoint,
-                          false,
-                          mode === 'development',
-                      ),
-                  }),
-            ...(store.initializationEndpoint === undefined
-                ? {}
-                : {
-                      initializationEndpoint: httpsUrl(
-                          store.initializationEndpoint,
-                          false,
-                          mode === 'development',
-                      ),
-                  }),
-        }));
+        const stores = input.map((store) => {
+            if (
+                store.allowCheckTest !== undefined &&
+                (typeof store.allowCheckTest !== 'boolean' || mode !== 'staging')
+            )
+                throw new Error('Check test requires explicit staging configuration');
+
+            return {
+                ...(store.allowCheckTest === true ? { allowCheckTest: true } : {}),
+                checkoutOrigin: httpsUrl(store.checkoutOrigin, true),
+                validationEndpoint: httpsUrl(
+                    store.validationEndpoint,
+                    false,
+                    mode === 'development',
+                ),
+                ...(store.freightEndpoint === undefined
+                    ? {}
+                    : {
+                          freightEndpoint: httpsUrl(
+                              store.freightEndpoint,
+                              false,
+                              mode === 'development',
+                          ),
+                      }),
+                ...(store.initializationEndpoint === undefined
+                    ? {}
+                    : {
+                          initializationEndpoint: httpsUrl(
+                              store.initializationEndpoint,
+                              false,
+                              mode === 'development',
+                          ),
+                      }),
+            };
+        });
 
         if (
             stores.some(

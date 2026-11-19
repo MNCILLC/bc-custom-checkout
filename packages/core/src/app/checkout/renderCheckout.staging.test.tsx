@@ -315,3 +315,46 @@ it('runner-independent initialization still blocks stale server authorization an
         open.mockRestore();
     }
 });
+
+it.each([false, true])(
+    'requires both a verified Check grant and the per-store opt-in (%s)',
+    async (enabled) => {
+        process.env.WAREHOUSE_CHECKOUT_STORES = JSON.stringify([
+            { ...stores[0], allowCheckTest: enabled },
+        ]);
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                version: 1,
+                cartId: config.cartId,
+                revision: config.validation.revision,
+                warehouse: config.warehouse,
+                checkTestAuthorization: {
+                    version: 1,
+                    methodId: 'cheque',
+                    token: 'synthetic-signed-grant',
+                    expiresAt: Math.floor(Date.now() / 1000) + 60,
+                },
+            }),
+        });
+        await act(async () => mount());
+
+        const button = document.createElement('button');
+
+        button.id = 'checkout-payment-continue';
+        button.type = 'button';
+        document.body.appendChild(button);
+
+        const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+
+        button.dispatchEvent(click);
+        expect(click.defaultPrevented).toBe(!enabled);
+        // Even the opt-in path cannot fall back when its required handoff is removed.
+        delete window.warehouseCheckout;
+
+        const missing = new MouseEvent('click', { bubbles: true, cancelable: true });
+
+        button.dispatchEvent(missing);
+        expect(missing.defaultPrevented).toBe(true);
+    },
+);

@@ -2,6 +2,7 @@ export interface WarehouseDeployment {
     mode: 'off' | 'staging' | 'development';
     stores: Array<{
         checkoutOrigin: string;
+        allowCheckTest?: boolean;
         validationEndpoint: string;
         initializationEndpoint?: string;
         freightEndpoint?: string;

@@ -2,6 +2,7 @@ import React from 'react';
 import { render, unmountComponentAtNode } from 'react-dom';
 
 import { configurePublicPath } from '../common/bundler';
+import { canSubmitCheckTest } from '../warehouse/checkTest';
 import { getWarehouseCheckout, validateWarehouseCheckout } from '../warehouse/config';
 import { getWarehouseDeployment } from '../warehouse/deployment';
 import {
@@ -27,7 +28,10 @@ function installPurchaseGuards() {
 
     const blocked = () => {
         try {
-            return getWarehouseDeployment().mode !== 'off' || !!window.warehouseCheckout;
+            return (
+                (getWarehouseDeployment().mode !== 'off' || !!window.warehouseCheckout) &&
+                !canSubmitCheckTest()
+            );
         } catch {
             return true;
         }

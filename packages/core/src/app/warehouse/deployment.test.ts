@@ -111,3 +111,19 @@ it('allows freight only on the store validator backend origin', () => {
         ),
     ).toThrow();
 });
+
+it('Check-only execution needs an explicit per-store staging opt-in', () => {
+    expect(
+        readWarehouseDeployment('staging', JSON.stringify(stores)).stores[0].allowCheckTest,
+    ).toBeUndefined();
+    expect(
+        readWarehouseDeployment('staging', JSON.stringify([{ ...stores[0], allowCheckTest: true }]))
+            .stores[0].allowCheckTest,
+    ).toBe(true);
+    expect(() =>
+        readWarehouseDeployment(
+            'staging',
+            JSON.stringify([{ ...stores[0], allowCheckTest: 'true' }]),
+        ),
+    ).toThrow();
+});

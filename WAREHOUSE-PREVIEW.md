@@ -296,3 +296,18 @@ Isolated tests cover the transport, source/origin/nonce forgery, expiry, retries
 server validation, purchase guards, real Chrome popup messaging and read-only
 initialization concurrent with Redis warehouse changes. Browser tests use synthetic
 origins and fixtures; they do not establish real hosted checkout compatibility.
+
+
+## Cart-scoped Check-only test permission (not activated)
+
+Purchasing remains blocked by default. A staging store mapping may explicitly set `allowCheckTest: true`; do not enable this as part of isolated testing or set warehouse mode to `off`. Backend authorization is independently required. No existing environment, hosted setting, or loader is changed by this implementation.
+
+The standalone validator contract adds optional `checkTestAuthorization: {version:1, methodId:"cheque", token, expiresAt}` to successful authenticated validation responses. Keep `preview:true`. Permission is held in module-local state bound to the current cart, warehouse revision and validation credential. An alternative backend can implement the same contract without importing Catalyst. The reference backend signs a one-cart, one-customer, one-item policy with an exact total/currency, warehouse revision, origin and short expiry. It does not expose management credentials.
+
+Normal billing preparation, checkout refresh, strict submission snapshot validation, Freight checks and same-tab exclusion still run. The current mapped payment method, selected method and custom-callback status are part of the submission fingerprint. Only native `cheque`, without a gateway/custom callback or zero-payment fallback, can claim execution. Other payment methods remain blocked at submission; rendering a payment field is not authorization to execute it. Redirect finalization remains skipped because preview stays true.
+
+Immediately before SDK execution, POST the strict snapshot plus `checkTest: {token, methodId:"cheque", gatewayId:null}` to the existing validator. Require `checkTestClaimed:true`, the identical grant token, and the usual matching snapshot/cart/revision. The backend must validate again and atomically claim the cart. Recheck the local fingerprint, Freight approval and grant expiry after the response. No acknowledgement, lost response, or changed checkout means no execution.
+
+The browser consumes its attempt before sending the claim; it never automatically clears that state. The backend uses a durable cart-scoped tombstone, not an expiring lock, so a reload/new tab/new grant cannot authorize a second cooperating attempt. All ambiguous outcomes require operator reconciliation. This does not prevent direct native API bypass or changes after validation; it is not exactly-once BigCommerce submission enforcement.
+
+Tests exercise a simulated executor only. Before any separately authorized order, run the focused warehouse, `renderCheckout.staging`, and `payment/Payment` tests and verify both opt-ins are absent in ordinary builds. A future controlled test would authorize one dedicated cart with Check, activate the tested hosted bundle temporarily, reconcile the resulting order and location inventory, revoke the policy, and restore the saved loader. Do not retry an ambiguous submission or reset an attempt record automatically.

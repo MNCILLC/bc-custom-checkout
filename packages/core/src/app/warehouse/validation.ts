@@ -1,3 +1,8 @@
+import {
+    acceptCheckTestAuthorization,
+    type CheckTestAuthorization,
+    type CheckTestClaim,
+} from './checkTest';
 import { getWarehouseCheckout, validateWarehouseCheckout } from './config';
 import { type SubmissionSnapshot } from './submission';
 import { warehouseSubmissionInProgress } from './submissionState';
@@ -20,6 +25,7 @@ export function beginWarehouseTransition(): () => void {
 export async function validateCurrentWarehouse(
     requestedMode?: 'pickup' | 'shipping',
     submission?: SubmissionSnapshot,
+    checkTest?: CheckTestClaim,
 ): Promise<void> {
     const current = getWarehouseCheckout();
 
@@ -57,6 +63,7 @@ export async function validateCurrentWarehouse(
                 revision: config.validation.revision,
                 ...(requestedMode ? { requestedMode } : {}),
                 ...(submission ? { submission } : {}),
+                ...(checkTest ? { checkTest } : {}),
             }),
             signal: controller.signal,
         });
@@ -67,6 +74,8 @@ export async function validateCurrentWarehouse(
             warehouse: typeof config.warehouse;
             message?: string;
             submission?: SubmissionSnapshot;
+            checkTestAuthorization?: CheckTestAuthorization;
+            checkTestClaimed?: boolean;
         };
 
         if (!response.ok)
@@ -74,6 +83,9 @@ export async function validateCurrentWarehouse(
                 result.message || 'Warehouse verification failed. Return to your cart.',
             );
         if (
+            (checkTest &&
+                (result.checkTestClaimed !== true ||
+                    result.checkTestAuthorization?.token !== checkTest.token)) ||
             result.version !== 1 ||
             result.cartId !== config.cartId ||
             result.revision !== config.validation.revision ||
@@ -92,6 +104,7 @@ export async function validateCurrentWarehouse(
         validateWarehouseCheckout(verified, config.cartId);
         // Fulfillment policy is supplied by the authenticated server response.
         window.warehouseCheckout = verified;
+        acceptCheckTestAuthorization(result.checkTestAuthorization);
     } catch (error) {
         if (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError'))
             throw new Error(
