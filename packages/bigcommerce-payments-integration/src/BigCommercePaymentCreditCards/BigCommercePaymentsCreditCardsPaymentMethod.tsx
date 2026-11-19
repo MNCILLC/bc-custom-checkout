@@ -21,6 +21,7 @@ import {
     isInstrumentCardNumberRequiredSelector,
 } from '@bigcommerce/checkout/instrument-utils';
 import {
+    assertPaymentProviderAllowed,
     type PaymentMethodProps,
     type PaymentMethodResolveId,
     toResolvableComponent,
@@ -251,18 +252,24 @@ const BigCommercePaymentsCreditCardsPaymentMethod: FunctionComponent<PaymentMeth
     const initializeBigCommercePaymentsCreditCardPayment: CreditCardPaymentMethodProps['initializePayment'] =
         useCallback(
             async (options, selectedInstrument) => {
+                assertPaymentProviderAllowed(method.id, 'payment');
+
+                const form = isHostedFormEnabled
+                    ? await getHostedFormOptions(selectedInstrument)
+                    : undefined;
+
+                assertPaymentProviderAllowed(method.id, 'payment');
+
                 return initializePayment({
                     ...options,
                     integrations: [createBigCommercePaymentsCreditCardsPaymentStrategy],
                     bigcommerce_payments_creditcards: {
-                        form: isHostedFormEnabled
-                            ? await getHostedFormOptions(selectedInstrument)
-                            : undefined,
+                        form,
                         onLoadComplete: () => setIsLoading(false),
                     },
                 });
             },
-            [getHostedFormOptions, initializePayment],
+            [getHostedFormOptions, initializePayment, method.id],
         );
 
     // Info: isHostedFormEnabled is an option in store config which responsible for switching BigCommercePayments Credit Card form

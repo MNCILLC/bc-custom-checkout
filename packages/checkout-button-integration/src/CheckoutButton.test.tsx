@@ -34,6 +34,7 @@ describe('CheckoutButton', () => {
             methodId: 'foobar',
             foobar: {
                 container: 'button-container',
+                onClick: expect.any(Function) as () => void,
                 onUnhandledError: defaultProps.onUnhandledError,
             },
         });
@@ -65,6 +66,7 @@ describe('CheckoutButton', () => {
             methodId: 'foobar',
             foobar: {
                 container: 'button-container',
+                onClick: expect.any(Function) as () => void,
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 onComplete: expect.any(Function),
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment

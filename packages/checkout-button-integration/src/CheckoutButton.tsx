@@ -1,10 +1,15 @@
 import React, { type FunctionComponent, useEffect } from 'react';
 
 import {
+    assertPaymentProviderAllowed,
     type CheckoutButtonProps,
     type CheckoutButtonResolveId,
     toResolvableComponent,
 } from '@bigcommerce/checkout/payment-integration-api';
+
+function isClickCallback(value: unknown): value is (...args: unknown[]) => unknown {
+    return typeof value === 'function';
+}
 
 const CheckoutButton: FunctionComponent<CheckoutButtonProps> = ({
     checkoutService: { deinitializeCustomer, initializeCustomer },
@@ -17,6 +22,7 @@ const CheckoutButton: FunctionComponent<CheckoutButtonProps> = ({
 }) => {
     const initializeCustomerStrategyOrThrow = async () => {
         try {
+            assertPaymentProviderAllowed(methodId, 'express');
             await initializeCustomer({
                 methodId,
                 integrations,
@@ -24,6 +30,13 @@ const CheckoutButton: FunctionComponent<CheckoutButtonProps> = ({
                     container: containerId,
                     onUnhandledError,
                     ...additionalInitializationOptions,
+                    onClick: (...args: unknown[]) => {
+                        assertPaymentProviderAllowed(methodId, 'express');
+
+                        const onClick = additionalInitializationOptions?.onClick;
+
+                        if (isClickCallback(onClick)) return onClick(...args);
+                    },
                 },
             });
         } catch (error) {

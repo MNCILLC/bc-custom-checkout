@@ -14,6 +14,7 @@ import {
 } from '@bigcommerce/checkout/contexts';
 import { AutoVaultingDisclaimer } from '@bigcommerce/checkout/instrument-utils';
 import { TranslatedString } from '@bigcommerce/checkout/locale';
+import { isPaymentProviderAllowed } from '@bigcommerce/checkout/payment-integration-api';
 import { LazyContainer } from '@bigcommerce/checkout/ui';
 
 import { withCheckout } from '../checkout';
@@ -64,7 +65,7 @@ const CheckoutButtonList: FunctionComponent<
     } = useCapabilities();
     const paymentMethods = checkoutState.data.getPaymentMethods();
 
-    if (disableWalletButtons) {
+    if (disableWalletButtons || !isPaymentProviderAllowed(undefined, 'express')) {
         return null;
     }
 

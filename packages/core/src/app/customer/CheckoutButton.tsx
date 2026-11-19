@@ -4,6 +4,8 @@ import {
 } from '@bigcommerce/checkout-sdk';
 import React, { type ReactElement, useEffect } from 'react';
 
+import { assertPaymentProviderAllowed } from '@bigcommerce/checkout/payment-integration-api';
+
 const WALLET_BUTTON_HEIGHT = 40;
 
 export interface CheckoutButtonProps {
@@ -24,6 +26,14 @@ const CheckoutButton = ({
     onError,
 }: CheckoutButtonProps): ReactElement => {
     useEffect(() => {
+        try {
+            assertPaymentProviderAllowed(methodId, 'express');
+        } catch (error) {
+            if (error instanceof Error) onError?.(error);
+
+            return;
+        }
+
         const heightOption =
             isShowingWalletButtonsOnTop &&
             (methodId === 'braintreepaypal' || methodId === 'braintreepaypalcredit')
@@ -36,6 +46,7 @@ const CheckoutButton = ({
                 ...heightOption,
                 container: containerId,
                 onError,
+                onClick: () => assertPaymentProviderAllowed(methodId, 'express'),
             },
         });
 

@@ -28,3 +28,10 @@ export { isGooglePayHandleUnsuccessful3dsCheckExperimentOn } from './isGooglePay
 export type { CountryData } from './CountryData';
 export type { default as CreditCardFieldsetValues } from './CreditCardFieldsetValues';
 export type { PaymentMethodFilter, PaymentMethodFilterContext } from './PaymentMethodFilter';
+
+export {
+    assertPaymentProviderAllowed,
+    isPaymentProviderAllowed,
+    setPaymentProviderGuard,
+} from './paymentProviderGuard';
+export type { PaymentProviderFlow, PaymentProviderGuard } from './paymentProviderGuard';

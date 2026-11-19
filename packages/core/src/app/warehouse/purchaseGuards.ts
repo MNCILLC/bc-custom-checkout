@@ -1,6 +1,8 @@
+import { setPaymentProviderGuard } from '@bigcommerce/checkout/payment-integration-api';
+
 import { getWarehouseCheckout, validateWarehouseCheckout } from './config';
 import { getWarehouseDeployment } from './deployment';
-import { submissionNeedsReview } from './recovery';
+import { assertNoSubmissionRecovery, submissionNeedsReview } from './recovery';
 import { canSubmitTestPayment } from './testPayment';
 
 let purchaseGuardsInstalled = false;
@@ -8,6 +10,24 @@ let purchaseGuardsInstalled = false;
 export function installPurchaseGuards() {
     if (purchaseGuardsInstalled) return;
     purchaseGuardsInstalled = true;
+
+    const removeProviderGuard = setPaymentProviderGuard((methodId, flow) => {
+        if (getWarehouseDeployment().mode === 'off' && !window.warehouseCheckout) return;
+
+        const config = getWarehouseCheckout();
+
+        if (!config) throw new Error('Warehouse checkout is unavailable. Return to your cart.');
+        validateWarehouseCheckout(config, config.cartId);
+        assertNoSubmissionRecovery();
+
+        // These native forms may render for blocked validation. Submission still requires
+        // the existing cart-scoped authorization, server claim and final warehouse check.
+        // A test grant never authorizes a real provider or an express wallet.
+        if (flow === 'express' || !['bigpaypay', 'cheque'].includes(methodId || ''))
+            throw new Error(
+                'This payment provider is unavailable while warehouse purchasing is blocked.',
+            );
+    });
 
     const blocked = () => {
         try {
@@ -79,6 +99,7 @@ export function installPurchaseGuards() {
     document.addEventListener('click', onClick, true);
 
     return () => {
+        removeProviderGuard();
         document.removeEventListener('submit', onSubmit, true);
         document.removeEventListener('click', onClick, true);
         purchaseGuardsInstalled = false;

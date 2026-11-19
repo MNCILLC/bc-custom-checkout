@@ -42,6 +42,7 @@ describe('BigCommercePaymentsButton', () => {
             integrations: [createBigCommercePaymentsCustomerStrategy],
             bigcommerce_payments: {
                 container: 'bigcommerce-payments-button-container',
+                onClick: expect.any(Function),
                 onComplete: expect.any(Function),
                 onError: expect.any(Function),
                 onUnhandledError: expect.any(Function),

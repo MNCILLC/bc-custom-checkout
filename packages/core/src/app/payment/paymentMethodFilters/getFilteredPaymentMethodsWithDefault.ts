@@ -7,6 +7,7 @@ import {
 } from '@bigcommerce/checkout-sdk';
 import { find } from 'lodash';
 
+import { isPaymentProviderAllowed } from '@bigcommerce/checkout/payment-integration-api';
 import { isExperimentEnabled } from '@bigcommerce/checkout/utility';
 
 import {
@@ -65,6 +66,10 @@ export const getFilteredPaymentMethodsWithDefault = ({
         paymentProviderCustomer,
         capabilities,
     });
+
+    filteredMethods = filteredMethods.filter((method) =>
+        isPaymentProviderAllowed(method.id, 'payment'),
+    );
 
     const shouldGroupPaymentMethodsByPrefix = filteredMethods.some((method) =>
         GROUPED_METHOD_ID_PREFIXES.some((prefix) => method.id.startsWith(prefix)),

@@ -16,7 +16,10 @@ import {
 import React, { type FunctionComponent, useCallback, useEffect, useRef } from 'react';
 
 import { InstrumentDeclinedError } from '@bigcommerce/checkout/error-handling-utils';
-import { type PaymentMethodProps } from '@bigcommerce/checkout/payment-integration-api';
+import {
+    assertPaymentProviderAllowed,
+    type PaymentMethodProps,
+} from '@bigcommerce/checkout/payment-integration-api';
 
 type BigCommercePaymentsProvidersPaymentInitializeOptions =
     BigCommercePaymentsAlternativeMethodsPaymentInitializeOptions &
@@ -104,8 +107,22 @@ const BigCommercePaymentsPaymentMethodComponent: FunctionComponent<
         };
     }, [shouldSaveInstrument, shouldConfirmInstrument]);
 
+    const providerAllowed = () => {
+        try {
+            assertPaymentProviderAllowed(method.id, 'payment');
+
+            return true;
+        } catch (error) {
+            paymentForm.disableSubmit(method, true);
+            if (error instanceof Error) onUnhandledError(error);
+
+            return false;
+        }
+    };
+
     const initializePayment = async () => {
         try {
+            assertPaymentProviderAllowed(method.id, 'payment');
             await checkoutService.initializePayment({
                 gatewayId: method.gateway,
                 methodId: method.id,
@@ -123,9 +140,12 @@ const BigCommercePaymentsPaymentMethodComponent: FunctionComponent<
                         paymentForm.hidePaymentSubmitButton(method, true);
                     },
                     onInit: (onRenderButton: () => void) => {
-                        renderButtonRef.current = onRenderButton;
+                        renderButtonRef.current = () => {
+                            if (providerAllowed()) onRenderButton();
+                        };
                     },
                     submitForm: () => {
+                        if (!providerAllowed()) return;
                         paymentForm.setSubmitted(true);
                         paymentForm.submitForm();
                     },
@@ -139,6 +159,8 @@ const BigCommercePaymentsPaymentMethodComponent: FunctionComponent<
                         }
                     },
                     onValidate: async (resolve: () => void, reject: () => void): Promise<void> => {
+                        if (!providerAllowed()) return reject();
+
                         const keysValidation = await validateForm();
 
                         if (keysValidation.length) {
@@ -156,6 +178,10 @@ const BigCommercePaymentsPaymentMethodComponent: FunctionComponent<
 
                             return reject();
                         }
+
+                        // Form/billing validation can yield; recheck the live policy before
+                        // allowing the SDK to create a provider intent.
+                        if (!providerAllowed()) return reject();
 
                         return resolve();
                     },

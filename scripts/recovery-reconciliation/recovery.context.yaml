@@ -1,0 +1,44 @@
+purpose:
+  stands_in_for: BigCommerce order and transaction reads and Upstash recovery GET; local node:test fixtures, not a Postman simulation deployment.
+  unblocks: Verify that the standalone read-only reconciliation CLI preserves uncertainty and never authorizes retry under modeled failures.
+assumptions:
+  - id: current-sandbox-order-transaction-contract
+    status: supported
+    claim: The current sandbox returns cart/channel identity and complete transaction pagination for the four existing orders checked.
+    reason: Real GET requests matched orders 109 through 112; this is evidence for those records at the observation time only.
+    verification: On 2026-11-19, the CLI module found all four orders, verified transaction ownership and pagination, and observed unchanged attempt records before and after each check. Orders 110-112 reported captured Test provider payments; order 109 reported Check with blank payment status.
+    source: reconcile.cjs; live rehearsal outputs/recovery-reconciliation/live-results.json in the task workspace; https://docs.bigcommerce.com/developer/api-reference/rest/admin/management/orders/get-orders
+    updated_at: '2026-11-19'
+  - id: current-recovery-key-contract
+    status: supported
+    claim: The current shared Check and Test provider attempt key uses the namespace and SHA256 of the JSON store/channel/cart tuple.
+    reason: Backend source inspection agrees with the values retrieved for existing submissions and simulated fixtures.
+    verification: Inspected Catalyst core/lib/warehouse/check-test.ts testPaymentAttemptKey and successfully read seven matching records with no mutation during the 2026-11-19 rehearsal.
+    source: reconcile.cjs attemptKey; Catalyst core/lib/warehouse/check-test.ts testPaymentAttemptKey
+    updated_at: '2026-11-19'
+  - id: failure-response-handling
+    status: supported
+    claim: Under the modeled failures the caller retains uncertainty, emits sanitized evidence and never grants retry authorization.
+    reason: Isolated tests establish caller behavior; they do not establish how often or when real dependencies fail.
+    verification: node:test fixtures exercise HTTP errors, malformed/incomplete data, identity conflicts and changed records. Real loopback HTTP tests exercise fetch timeout, redirect refusal and server error using synthetic credentials.
+    source: reconcile.test.cjs
+    updated_at: '2026-11-19'
+  - id: no-order-implies-no-charge
+    status: unknown
+    claim: A completed order search with no match proves that no payment occurred.
+    reason: No evidence establishes this implication; delayed visibility and provider-only outcomes remain possible. The tool deliberately does not rely on it.
+    verification: Simulated carts returned no match on 2026-11-19. No failed payment was triggered and no gateway-side reconciliation was performed. All reports keep retryAuthorized false.
+    source: reconcile.cjs GUIDANCE and report; README.md limitations
+    updated_at: '2026-11-19'
+  - id: production-gateway-coverage
+    status: unknown
+    claim: The sandbox tests establish production BigCommerce Payments settlement and recovery behavior.
+    reason: The live evidence uses existing Check and Test provider orders only; production gateway behavior is outside this rehearsal.
+    verification: No production payment, new order, refund or retry performed. Gateway-specific contract review and separately authorized tests remain required.
+    source: README.md limitations; live-results.json in the task workspace
+    updated_at: '2026-11-19'
+fingerprints:
+  - id: local-read-only-cli-2026-11-19
+    date: '2026-11-19'
+    commit: 55ceb0ed7ecddba6c4d2f63b79942232b225474b plus uncommitted scripts/recovery-reconciliation additions
+    cli: Node v24.21.0 built-in test runner; Postman CLI not used
