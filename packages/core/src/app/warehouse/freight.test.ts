@@ -133,6 +133,82 @@ it('blocks approval after an upstream outage', async () => {
     (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('network'));
     await expect(assertFreightReady(service)).rejects.toThrow('network');
 });
+it.each([502, 503, 504])('recovers one temporary %s during a submit-time read', async (status) => {
+    await ready();
+
+    const cancel = jest.fn().mockResolvedValue(undefined);
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status,
+        body: { cancel },
+        json: async () => {
+            throw new Error('Gateway HTML is not JSON');
+        },
+    });
+    await expect(assertFreightReady(service)).resolves.toBeUndefined();
+    expect(global.fetch).toHaveBeenCalledTimes(5);
+
+    const attempts = (global.fetch as jest.Mock).mock.calls.slice(3);
+
+    expect(attempts.map(([, options]) => JSON.parse(options.body))).toEqual([
+        { cartId: config.cartId, revision: config.validation.revision },
+        { cartId: config.cartId, revision: config.validation.revision },
+    ]);
+    expect(attempts[0][1].signal).toBe(attempts[1][1].signal);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(freightApproved(false)).toBe(true);
+});
+it('stops after one recovery read when the outage persists', async () => {
+    await ready();
+    (global.fetch as jest.Mock).mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: async () => ({ message: 'Delivery preferences unavailable' }),
+    });
+    await expect(assertFreightReady(service)).rejects.toThrow('unavailable');
+    expect(global.fetch).toHaveBeenCalledTimes(5);
+});
+it('never retries a preference write after a 503', async () => {
+    await ready();
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({ message: 'Delivery preferences unavailable' }),
+    });
+    await expect(saveFreightPreferences(false, [])).rejects.toThrow('unavailable');
+    expect(global.fetch).toHaveBeenCalledTimes(4);
+    expect(freightApproved(false)).toBe(false);
+});
+it.each([400, 401, 403, 409])('does not retry a %s validation rejection', async (status) => {
+    await ready();
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status,
+        json: async () => ({ message: 'Rejected' }),
+    });
+    await expect(assertFreightReady(service)).rejects.toThrow('Rejected');
+    expect(global.fetch).toHaveBeenCalledTimes(4);
+});
+it('still blocks preferences changed while recovering a read', async () => {
+    await ready();
+    (global.fetch as jest.Mock).mockImplementationOnce(async () => {
+        preferences = { ...preferences, version: 2, accessorials: [] };
+
+        return { ok: false, status: 503 };
+    });
+    await expect(assertFreightReady(service)).rejects.toThrow('changed');
+    expect(freightApproved(false)).toBe(false);
+});
+it('still blocks a warehouse switch while recovering a read', async () => {
+    await ready();
+    (global.fetch as jest.Mock).mockImplementationOnce(async () => {
+        config = { ...config, validation: { ...config.validation, revision: 'revision-b' } };
+
+        return { ok: false, status: 503 };
+    });
+    await expect(assertFreightReady(service)).rejects.toThrow('do not match');
+});
 it('never sends a capability to a different backend origin', async () => {
     (getWarehouseDeployment as jest.Mock).mockReturnValue({
         stores: [

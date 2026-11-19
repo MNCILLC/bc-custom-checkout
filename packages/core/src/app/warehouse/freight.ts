@@ -59,7 +59,9 @@ async function request(update?: {
     )
         throw new Error('Delivery preferences are not configured for this checkout.');
 
-    const response = await fetch(endpoint, {
+    // Both attempts share one deadline. Only preference reads may recover;
+    // never replay a preference write, submission claim, or order request.
+    const options: RequestInit = {
         method: 'POST',
         credentials: 'omit',
         cache: 'no-store',
@@ -73,7 +75,15 @@ async function request(update?: {
             ...(update ? { update } : {}),
         }),
         signal: AbortSignal.timeout(20000),
-    });
+    };
+    let response = await fetch(endpoint, options);
+
+    if (!update && [502, 503, 504].includes(response.status)) {
+        await response.body?.cancel();
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        response = await fetch(endpoint, options);
+    }
+
     const result = (await response.json()) as FreightResponse & { message?: string };
 
     if (!response.ok)
@@ -103,6 +113,7 @@ async function request(update?: {
                         !result.services.some((service) => service.code === code),
                 ) ||
                 !['ship', 'pickup'].includes(result.preferences.fulfillmentMethod))) ||
+        getWarehouseCheckout()?.cartId !== config.cartId ||
         getWarehouseCheckout()?.validation.revision !== config.validation.revision
     )
         throw new Error('Delivery preferences do not match this checkout.');
