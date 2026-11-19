@@ -11,6 +11,7 @@ import {
 } from '../warehouse/initialization';
 import { showLocalCheckoutNotice } from '../warehouse/local-navigation';
 import { installPurchaseGuards } from '../warehouse/purchaseGuards';
+import { RECOVERY_MESSAGE, submissionNeedsReview } from '../warehouse/recovery';
 import { validateCurrentWarehouse } from '../warehouse/validation';
 
 import { type CheckoutAppProps } from './CheckoutApp';
@@ -40,20 +41,31 @@ export default function renderCheckout({
     initializations.set(container, attempt);
 
     const current = () => initializations.get(container) === attempt;
+    const recoveryRequired = () => {
+        try {
+            return getWarehouseCheckout()?.cartId === props.checkoutId && submissionNeedsReview();
+        } catch {
+            // Missing or invalid initialization stays blocked by the ordinary authorization screen.
+            return false;
+        }
+    };
     const message = (failed: boolean) => {
         if (!current()) return;
         unmountComponentAtNode(container);
 
+        const recovery = recoveryRequired();
         const notice = document.createElement('div');
 
-        notice.setAttribute('role', failed ? 'alert' : 'status');
+        notice.setAttribute('role', failed || recovery ? 'alert' : 'status');
         notice.setAttribute('data-test', 'warehouse-initialization');
-        notice.textContent = failed
-            ? 'Warehouse checkout is unavailable. Return to your cart and try again.'
-            : 'Verifying your warehouse and inventory…';
+        notice.textContent = recovery
+            ? RECOVERY_MESSAGE
+            : failed
+              ? 'Warehouse checkout is unavailable. Return to your cart and try again.'
+              : 'Verifying your warehouse and inventory…';
         container.replaceChildren(notice);
 
-        if (failed && warehouseInitializationEndpoint()) {
+        if (failed && !recovery && warehouseInitializationEndpoint()) {
             const retry = document.createElement('button');
 
             retry.type = 'button';
@@ -69,6 +81,13 @@ export default function renderCheckout({
     };
     const mount = () => {
         if (!current()) return;
+
+        // A persisted hint or a recovery event during validation must not mount payment UI.
+        if (recoveryRequired()) {
+            message(true);
+
+            return;
+        }
 
         // Recheck after async validation, including cart binding and expiry.
         const warehouseConfig = getWarehouseCheckout();
@@ -95,6 +114,7 @@ export default function renderCheckout({
             void initializeWarehouseCheckout(container, props.checkoutId, current)
                 .then(async () => {
                     if (!current()) throw new Error('Authorization was superseded.');
+                    if (recoveryRequired()) throw new Error(RECOVERY_MESSAGE);
                     await validateCurrentWarehouse();
                 })
                 .then(mount)
