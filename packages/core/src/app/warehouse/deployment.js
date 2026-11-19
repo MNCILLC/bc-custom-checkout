@@ -35,7 +35,16 @@ function readWarehouseDeployment(mode = 'off', encodedStores = '[]') {
             )
                 throw new Error('Check test requires explicit staging configuration');
 
+            if (
+                store.allowTestProvider !== undefined &&
+                (typeof store.allowTestProvider !== 'boolean' || mode !== 'staging')
+            )
+                throw new Error('Test provider requires explicit staging configuration');
+            if (store.allowTestProvider === true && store.allowCheckTest === true)
+                throw new Error('Choose one test payment opt-in');
+
             return {
+                ...(store.allowTestProvider === true ? { allowTestProvider: true } : {}),
                 ...(store.allowCheckTest === true ? { allowCheckTest: true } : {}),
                 checkoutOrigin: httpsUrl(store.checkoutOrigin, true),
                 validationEndpoint: httpsUrl(

@@ -127,3 +127,29 @@ it('Check-only execution needs an explicit per-store staging opt-in', () => {
         ),
     ).toThrow();
 });
+
+it('Test provider is separately opt-in, staging-only, and exclusive of Check', () => {
+    const stores = [
+        {
+            checkoutOrigin: 'https://checkout.example',
+            validationEndpoint: 'https://backend.example/validate',
+        },
+    ];
+
+    expect(
+        readWarehouseDeployment('staging', JSON.stringify(stores)).stores[0].allowTestProvider,
+    ).toBeUndefined();
+    expect(
+        readWarehouseDeployment(
+            'staging',
+            JSON.stringify([{ ...stores[0], allowTestProvider: true }]),
+        ).stores[0].allowTestProvider,
+    ).toBe(true);
+    for (const config of [
+        { allowTestProvider: 'true' },
+        { allowTestProvider: true, allowCheckTest: true },
+    ])
+        expect(() =>
+            readWarehouseDeployment('staging', JSON.stringify([{ ...stores[0], ...config }])),
+        ).toThrow();
+});

@@ -1,6 +1,6 @@
-import { canSubmitCheckTest } from './checkTest';
 import { getWarehouseCheckout, validateWarehouseCheckout } from './config';
 import { getWarehouseDeployment } from './deployment';
+import { canSubmitTestPayment } from './testPayment';
 
 let purchaseGuardsInstalled = false;
 
@@ -12,7 +12,7 @@ export function installPurchaseGuards() {
         try {
             return (
                 (getWarehouseDeployment().mode !== 'off' || !!window.warehouseCheckout) &&
-                !canSubmitCheckTest()
+                !canSubmitTestPayment()
             );
         } catch {
             return true;

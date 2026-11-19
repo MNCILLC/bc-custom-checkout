@@ -82,3 +82,14 @@ More information can be found in the [contribution guide](CONTRIBUTING.md) and [
 
 Copyright (C) 2019-Present BigCommerce Inc. All rights reserved.
 # bc-custom-checkout
+
+
+### Warehouse Test payment provider rehearsal
+
+The standalone checkout supports a separate, default-off `allowTestProvider` boolean on a `WAREHOUSE_CHECKOUT_STORES` entry, only in `WAREHOUSE_CHECKOUT_MODE=staging`. It is mutually exclusive with `allowCheckTest`. No store identifiers or credentials are embedded in this implementation, and no environment value is installed automatically.
+
+An independent backend must return the authenticated `testProviderAuthorization` contract (`version:1`, `methodId:"bigpaypay"`, `testMode:true`, signed `token`, short-lived `expiresAt`) from the configured validator. The native form accepts only the exact Test payment provider, without a gateway override, stored instrument, save-instrument selection, or custom submit callback. It sends only payment identity and instrument-use booleans with the normal warehouse snapshot to claim a single attempt; it never sends card data to the warehouse backend. The response must explicitly acknowledge `testProviderClaimed:true` and the same token before the SDK executor runs.
+
+Backend authorization must bind the store/channel/cart/customer/warehouse/revision/item/quantity/amount/currency, verify that the provider is in test mode, and atomically consume a durable per-cart attempt shared with Check. An absent opt-in or grant keeps preview purchasing blocked. Ambiguous responses and SDK failures consume the attempt; do not retry or reset its claim. Redirect finalization and broader production purchasing remain blocked. Keep this checkout independent of any particular Catalyst deployment.
+
+Rollback after a separately authorized hosted test: restore the channel's original loader, remove the backend test policy and checkout `allowTestProvider` opt-in, redeploy both, verify the block, and retain the attempt record. This does not automatically cancel an order or reverse inventory.

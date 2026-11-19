@@ -6,6 +6,11 @@ import {
 import { getWarehouseCheckout, validateWarehouseCheckout } from './config';
 import { type SubmissionSnapshot } from './submission';
 import { warehouseSubmissionInProgress } from './submissionState';
+import {
+    acceptTestProviderAuthorization,
+    type TestProviderAuthorization,
+    type TestProviderClaim,
+} from './testProvider';
 
 let transitions = 0;
 
@@ -26,7 +31,10 @@ export async function validateCurrentWarehouse(
     requestedMode?: 'pickup' | 'shipping',
     submission?: SubmissionSnapshot,
     checkTest?: CheckTestClaim,
+    testProvider?: TestProviderClaim,
 ): Promise<void> {
+    if (checkTest && testProvider) throw new Error('Choose one test authorization.');
+
     const current = getWarehouseCheckout();
 
     if (!current) return;
@@ -64,6 +72,7 @@ export async function validateCurrentWarehouse(
                 ...(requestedMode ? { requestedMode } : {}),
                 ...(submission ? { submission } : {}),
                 ...(checkTest ? { checkTest } : {}),
+                ...(testProvider ? { testProvider } : {}),
             }),
             signal: controller.signal,
         });
@@ -76,6 +85,8 @@ export async function validateCurrentWarehouse(
             submission?: SubmissionSnapshot;
             checkTestAuthorization?: CheckTestAuthorization;
             checkTestClaimed?: boolean;
+            testProviderAuthorization?: TestProviderAuthorization;
+            testProviderClaimed?: boolean;
         };
 
         if (!response.ok)
@@ -86,6 +97,9 @@ export async function validateCurrentWarehouse(
             (checkTest &&
                 (result.checkTestClaimed !== true ||
                     result.checkTestAuthorization?.token !== checkTest.token)) ||
+            (testProvider &&
+                (result.testProviderClaimed !== true ||
+                    result.testProviderAuthorization?.token !== testProvider.token)) ||
             result.version !== 1 ||
             result.cartId !== config.cartId ||
             result.revision !== config.validation.revision ||
@@ -105,6 +119,7 @@ export async function validateCurrentWarehouse(
         // Fulfillment policy is supplied by the authenticated server response.
         window.warehouseCheckout = verified;
         acceptCheckTestAuthorization(result.checkTestAuthorization);
+        acceptTestProviderAuthorization(result.testProviderAuthorization);
     } catch (error) {
         if (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError'))
             throw new Error(

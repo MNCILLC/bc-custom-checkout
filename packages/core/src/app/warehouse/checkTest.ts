@@ -17,12 +17,20 @@ export interface CheckTestPayment {
     gatewayId?: string;
     selectedMethodId?: string;
     customSubmit: boolean;
+    usesStoredInstrument?: boolean;
+    shouldSaveInstrument?: boolean;
 }
 
 let authorization:
     | { grant: CheckTestAuthorization; cartId: string; revision: string; credential: string }
     | undefined;
 const attemptedCarts = new Set<string>();
+
+export function markTestPaymentAttempt(cartId: string) {
+    if (attemptedCarts.has(cartId))
+        throw new Error('Reconcile this test cart before another submission attempt.');
+    attemptedCarts.add(cartId);
+}
 
 // Only authenticated validator responses populate this module-local state.
 export function acceptCheckTestAuthorization(value: CheckTestAuthorization | undefined) {
@@ -94,10 +102,9 @@ export function beginCheckTestAttempt(payment: CheckTestPayment | undefined): Ch
     const config = getWarehouseCheckout();
 
     if (!grant || !config) throw new Error('Check test authorization is unavailable.');
-    if (attemptedCarts.has(config.cartId))
-        throw new Error('Reconcile this test cart before another submission attempt.');
+
     // No reset on errors, reload responses, or SDK failure. Server tombstone also covers other tabs.
-    attemptedCarts.add(config.cartId);
+    markTestPaymentAttempt(config.cartId);
 
     return { token: grant.token, methodId: 'cheque', gatewayId: null };
 }

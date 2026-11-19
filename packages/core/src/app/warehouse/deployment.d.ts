@@ -3,6 +3,7 @@ export interface WarehouseDeployment {
     stores: Array<{
         checkoutOrigin: string;
         allowCheckTest?: boolean;
+        allowTestProvider?: boolean;
         validationEndpoint: string;
         initializationEndpoint?: string;
         freightEndpoint?: string;

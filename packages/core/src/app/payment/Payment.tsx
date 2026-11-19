@@ -522,6 +522,8 @@ const Payment = (
                         methodId: request.payment?.methodId,
                         gatewayId: request.payment?.gatewayId,
                         selectedMethodId: method?.id,
+                        usesStoredInstrument: !!(values.instrumentId || values.bigpayToken),
+                        shouldSaveInstrument: !!values.shouldSaveInstrument,
                         customSubmit: !!(
                             method &&
                             state.submitFunctions[
