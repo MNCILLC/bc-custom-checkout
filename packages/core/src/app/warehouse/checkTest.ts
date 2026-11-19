@@ -1,5 +1,6 @@
 import { getWarehouseCheckout } from './config';
 import { getWarehouseDeployment } from './deployment';
+import { RECOVERY_MESSAGE, requireSubmissionReview } from './recovery';
 
 export interface CheckTestAuthorization {
     version: 1;
@@ -27,9 +28,9 @@ let authorization:
 const attemptedCarts = new Set<string>();
 
 export function markTestPaymentAttempt(cartId: string) {
-    if (attemptedCarts.has(cartId))
-        throw new Error('Reconcile this test cart before another submission attempt.');
+    if (attemptedCarts.has(cartId)) throw new Error(RECOVERY_MESSAGE);
     attemptedCarts.add(cartId);
+    requireSubmissionReview();
 }
 
 // Only authenticated validator responses populate this module-local state.

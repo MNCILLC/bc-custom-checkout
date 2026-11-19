@@ -124,3 +124,27 @@ it('leaves ordinary non-warehouse checkout unchanged', () => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     expect(handler).toHaveBeenCalledTimes(1);
 });
+
+it('blocks a validated payment form with a persisted attempt before any handler runs', () => {
+    const key = `warehouse-submission-recovery:v1:${config.validation.endpoint}:${config.cartId}`;
+
+    window.localStorage.setItem(key, 'attempted');
+
+    const handler = jest.fn();
+
+    form.addEventListener('click', handler);
+    form.addEventListener('submit', handler);
+
+    try {
+        const click = new Event('click', { bubbles: true, cancelable: true });
+        const submit = new Event('submit', { bubbles: true, cancelable: true });
+
+        control.dispatchEvent(click);
+        form.dispatchEvent(submit);
+        expect(click.defaultPrevented).toBe(true);
+        expect(submit.defaultPrevented).toBe(true);
+        expect(handler).not.toHaveBeenCalled();
+    } finally {
+        window.localStorage.removeItem(key);
+    }
+});

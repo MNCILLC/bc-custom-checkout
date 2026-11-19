@@ -320,3 +320,14 @@ Immediately before SDK execution, POST the strict snapshot plus `checkTest: {tok
 The browser consumes its attempt before sending the claim; it never automatically clears that state. The backend uses a durable cart-scoped tombstone, not an expiring lock, so a reload/new tab/new grant cannot authorize a second cooperating attempt. All ambiguous outcomes require operator reconciliation. This does not prevent direct native API bypass or changes after validation; it is not exactly-once BigCommerce submission enforcement.
 
 Tests exercise a simulated executor only. Before any separately authorized order, run the focused warehouse, `renderCheckout.staging`, and `payment/Payment` tests and verify both opt-ins are absent in ordinary builds. A future controlled test would authorize one dedicated cart with Check, activate the tested hosted bundle temporarily, reconcile the resulting order and location inventory, revoke the policy, and restore the saved loader. Do not retry an ambiguous submission or reset an attempt record automatically.
+
+
+## Persistent attempt recovery
+
+Checkout retains a cart-scoped recovery marker before requesting a Check or Test payment provider claim. It stores only an attempted flag, keyed by validator endpoint and cart ID, in browser local storage; storage events lock other open tabs. Storage failure retains a same-tab memory lock. The backend's permanent Redis claim remains authoritative across browsers and backend instances; the browser marker is only a conservative UX hint.
+
+The standalone validator contract accepts HTTP 409 with `{ "version": 1, "cartId": "...", "revision": "...", "code": "SUBMISSION_REVIEW_REQUIRED", "recovery": { "status": "review_required" } }`. It must authenticate the signed cart capability before disclosing recovery. Recovery is checked before active-cart lookup and before issuing grants, including when the test policy has been removed or the cart converted to an order. Storage unavailability fails closed. No checkout-to-Catalyst source dependency is required.
+
+After an attempt, checkout disables payment, hides verification retry, and instructs the shopper not to submit again and to contact the store. Refreshing or ordinary verification never clears recovery. A response loss is not evidence of failure: there is no automatic retry, claim release, payment reconciliation, or success/failure inference. Pre-claim connectivity failures still allow **verification** retries. The active authorized attempt may finish; recovery blocks subsequent attempts.
+
+An operator must inspect the order/payment outcome before any separately authorized recovery action. Expired signed capabilities cannot read backend status; purchasing remains blocked and a fresh authenticated handoff is required. These changes do not enable general purchasing or production payment methods, and do not remove the previously documented native SDK enforcement boundary.

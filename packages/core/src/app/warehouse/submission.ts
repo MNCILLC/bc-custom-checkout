@@ -3,6 +3,7 @@ import { type CheckoutService } from '@bigcommerce/checkout-sdk';
 import { type CheckTestPayment } from './checkTest';
 import { getWarehouseCheckout, warehouseConsignmentsValid } from './config';
 import { assertFreightReady, freightFingerprint } from './freight';
+import { assertNoSubmissionRecovery, RECOVERY_MESSAGE, submissionNeedsReview } from './recovery';
 import { createSubmissionGuard } from './submissionGuard';
 import { setWarehouseSubmissionInProgress } from './submissionState';
 import { assertTestPayment, beginTestPaymentAttempt, canSubmitTestPayment } from './testPayment';
@@ -80,7 +81,11 @@ export async function submitWithWarehouseValidation<T>(
     };
 
     return submit({
-        prepare,
+        prepare: async () => {
+            assertNoSubmissionRecovery();
+
+            return prepare();
+        },
         refresh: async () => {
             await service.loadCheckout(config.cartId);
         },
@@ -94,30 +99,35 @@ export async function submitWithWarehouseValidation<T>(
             await assertFreightReady(service);
         },
         execute: async () => {
-            // Preview stays blocked unless this cart has an explicit test payment authorization.
-            // Isolated tests use a simulated executor; they never submit an order.
-            if (config.preview) {
-                if (!canSubmitTestPayment())
-                    throw new Error('Warehouse verified. Preview only: no order was submitted.');
+            try {
+                // Preview stays blocked unless this cart has an explicit test payment authorization.
+                // Isolated tests use a simulated executor; they never submit an order.
+                if (config.preview) {
+                    if (!canSubmitTestPayment())
+                        throw new Error(
+                            'Warehouse verified. Preview only: no order was submitted.',
+                        );
 
-                const reviewed = fingerprint();
-                const claim = beginTestPaymentAttempt(payment?.());
+                    const reviewed = fingerprint();
+                    const claim = beginTestPaymentAttempt(payment?.());
 
-                await validateCurrentWarehouse(
-                    undefined,
-                    submissionSnapshot(service),
-                    claim.checkTest,
-                    claim.testProvider,
-                );
-                await assertFreightReady(service);
-                if (!canSubmitTestPayment() || fingerprint() !== reviewed)
-                    throw new Error(
-                        'Checkout changed during authorization. Reconcile this test cart before retrying.',
+                    await validateCurrentWarehouse(
+                        undefined,
+                        submissionSnapshot(service),
+                        claim.checkTest,
+                        claim.testProvider,
                     );
-                assertTestPayment(payment?.());
-            }
+                    await assertFreightReady(service);
+                    if (!canSubmitTestPayment() || fingerprint() !== reviewed)
+                        throw new Error(RECOVERY_MESSAGE);
+                    assertTestPayment(payment?.());
+                }
 
-            return execute();
+                return await execute();
+            } catch (error) {
+                if (submissionNeedsReview()) throw new Error(RECOVERY_MESSAGE);
+                throw error;
+            }
         },
     });
 }

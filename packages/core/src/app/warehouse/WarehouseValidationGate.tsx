@@ -2,6 +2,7 @@ import { type CheckoutService } from '@bigcommerce/checkout-sdk/essential';
 import React, { type ReactNode, useEffect, useState } from 'react';
 
 import { getWarehouseCheckout } from './config';
+import { RECOVERY_EVENT, RECOVERY_MESSAGE, submissionNeedsReview } from './recovery';
 import { warehouseSubmissionInProgress } from './submissionState';
 import { validateCurrentWarehouse, warehouseTransitionInProgress } from './validation';
 
@@ -16,14 +17,24 @@ export default function WarehouseValidationGate({
     const [checking, setChecking] = useState(!!getWarehouseCheckout());
     const [error, setError] = useState('');
     const [retry, setRetry] = useState(0);
+    const [recovery, setRecovery] = useState(submissionNeedsReview());
     const [submitting, setSubmitting] = useState(warehouseSubmissionInProgress());
 
     useEffect(() => {
-        const update = () => setSubmitting(warehouseSubmissionInProgress());
+        const update = () => {
+            setSubmitting(warehouseSubmissionInProgress());
+            setRecovery(submissionNeedsReview());
+        };
 
         window.addEventListener('warehouse-submission-state', update);
+        window.addEventListener(RECOVERY_EVENT, update);
+        window.addEventListener('storage', update);
 
-        return () => window.removeEventListener('warehouse-submission-state', update);
+        return () => {
+            window.removeEventListener('warehouse-submission-state', update);
+            window.removeEventListener(RECOVERY_EVENT, update);
+            window.removeEventListener('storage', update);
+        };
     }, []);
 
     useEffect(() => {
@@ -48,11 +59,11 @@ export default function WarehouseValidationGate({
             try {
                 const config = getWarehouseCheckout();
 
+                await validateCurrentWarehouse();
+
                 if (refresh && config && checkoutService.getState().data.getCheckout()) {
                     await checkoutService.loadCheckout(config.cartId);
                 }
-
-                await validateCurrentWarehouse();
 
                 if (active) {
                     setError('');
@@ -114,14 +125,16 @@ export default function WarehouseValidationGate({
 
     return (
         <>
-            {(checking || submitting || error) && (
+            {(checking || submitting || error || recovery) && (
                 <div
                     data-test="warehouse-validation"
-                    role={error ? 'alert' : 'status'}
+                    role={error || (recovery && !submitting) ? 'alert' : 'status'}
                     style={{ padding: '16px 24px' }}
                 >
-                    {error || 'Verifying your warehouse and inventory…'}
-                    {!!error && (
+                    {recovery && !submitting
+                        ? RECOVERY_MESSAGE
+                        : error || 'Verifying your warehouse and inventory…'}
+                    {!!error && !recovery && (
                         <button
                             className="button optimizedCheckout-buttonSecondary"
                             onClick={() => setRetry((value) => value + 1)}
@@ -134,7 +147,7 @@ export default function WarehouseValidationGate({
             )}
             <fieldset
                 data-test="warehouse-validation-content"
-                disabled={checking || submitting || !!error}
+                disabled={checking || submitting || !!error || recovery}
                 style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
             >
                 {ready && children}

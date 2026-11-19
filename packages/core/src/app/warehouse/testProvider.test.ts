@@ -3,6 +3,7 @@ import { type CheckoutService } from '@bigcommerce/checkout-sdk';
 import { acceptCheckTestAuthorization, beginCheckTestAttempt } from './checkTest';
 import type { WarehouseCheckoutConfig } from './config';
 import { getWarehouseDeployment } from './deployment';
+import { submissionNeedsReview } from './recovery';
 import { submitWithWarehouseValidation } from './submission';
 import { acceptTestProviderAuthorization, canSubmitTestProvider } from './testProvider';
 
@@ -163,7 +164,7 @@ it('an explicit grant admits only one simulated native Test payment provider exe
     await expect(submit()).resolves.toBe('simulated-order');
     expect(claimCalls).toBe(1);
     expect(execute).toHaveBeenCalledTimes(1);
-    await expect(submit()).rejects.toThrow('Reconcile');
+    await expect(submit()).rejects.toThrow('Do not submit again');
     expect(execute).toHaveBeenCalledTimes(1);
 });
 it.each(['card', 'gateway', 'custom', 'override'])('rejects %s before execution', async (kind) => {
@@ -201,24 +202,24 @@ it('method change during the claim stops execution and consumes the attempt', as
         choice.methodId = 'cheque';
     };
 
-    await expect(submit()).rejects.toThrow('Checkout changed');
+    await expect(submit()).rejects.toThrow('Do not submit again');
     expect(execute).not.toHaveBeenCalled();
     choice.methodId = 'bigpaypay';
-    await expect(submit()).rejects.toThrow('Reconcile');
+    await expect(submit()).rejects.toThrow('Do not submit again');
     expect(claimCalls).toBe(1);
 });
 it('uncertain claim response blocks automatic retry', async () => {
     uncertain = true;
-    await expect(submit()).rejects.toThrow('Cannot reach');
+    await expect(submit()).rejects.toThrow('Do not submit again');
     uncertain = false;
-    await expect(submit()).rejects.toThrow('Reconcile');
+    await expect(submit()).rejects.toThrow('Do not submit again');
     expect(claimCalls).toBe(1);
     expect(execute).not.toHaveBeenCalled();
 });
 it('SDK failure after a successful claim cannot submit again', async () => {
     execute.mockRejectedValue(new Error('uncertain SDK response'));
-    await expect(submit()).rejects.toThrow('uncertain SDK');
-    await expect(submit()).rejects.toThrow('Reconcile');
+    await expect(submit()).rejects.toThrow('Do not submit again');
+    await expect(submit()).rejects.toThrow('Do not submit again');
     expect(execute).toHaveBeenCalledTimes(1);
 });
 it('missing claim acknowledgement never executes', async () => {
@@ -237,7 +238,7 @@ it('missing claim acknowledgement never executes', async () => {
             }),
         } as Response;
     });
-    await expect(submit()).rejects.toThrow('did not match');
+    await expect(submit()).rejects.toThrow('Do not submit again');
     expect(execute).not.toHaveBeenCalled();
 });
 
@@ -322,6 +323,24 @@ it('an attempted provider cart cannot switch to a new Check attempt', async () =
             selectedMethodId: 'cheque',
             customSubmit: false,
         }),
-    ).toThrow('Reconcile');
+    ).toThrow('Do not submit again');
     acceptCheckTestAuthorization(undefined);
+});
+
+it('keeps recovery locked when the payment executor catches its own SDK failure', async () => {
+    const onSubmitError = jest.fn();
+
+    execute.mockImplementation(async () => {
+        try {
+            throw new Error('simulated SDK decline');
+        } catch (error) {
+            onSubmitError(error);
+        }
+    });
+    await expect(submit()).resolves.toBeUndefined();
+    expect(onSubmitError).toHaveBeenCalledTimes(1);
+    expect(submissionNeedsReview()).toBe(true);
+    await expect(submit()).rejects.toThrow('Do not submit again');
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(claimCalls).toBe(1);
 });

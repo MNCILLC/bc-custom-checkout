@@ -1,5 +1,6 @@
 import { getWarehouseCheckout, validateWarehouseCheckout } from './config';
 import { getWarehouseDeployment } from './deployment';
+import { submissionNeedsReview } from './recovery';
 import { canSubmitTestPayment } from './testPayment';
 
 let purchaseGuardsInstalled = false;
@@ -12,7 +13,7 @@ export function installPurchaseGuards() {
         try {
             return (
                 (getWarehouseDeployment().mode !== 'off' || !!window.warehouseCheckout) &&
-                !canSubmitTestPayment()
+                (!canSubmitTestPayment() || submissionNeedsReview())
             );
         } catch {
             return true;
@@ -39,6 +40,7 @@ export function installPurchaseGuards() {
 
             if (!config) return false;
             validateWarehouseCheckout(config, config.cartId);
+            if (submissionNeedsReview()) return false;
 
             return true;
         } catch {

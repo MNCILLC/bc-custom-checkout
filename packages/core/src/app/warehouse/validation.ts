@@ -4,6 +4,7 @@ import {
     type CheckTestClaim,
 } from './checkTest';
 import { getWarehouseCheckout, validateWarehouseCheckout } from './config';
+import { RECOVERY_MESSAGE, requireSubmissionReview } from './recovery';
 import { type SubmissionSnapshot } from './submission';
 import { warehouseSubmissionInProgress } from './submissionState';
 import {
@@ -77,6 +78,8 @@ export async function validateCurrentWarehouse(
             signal: controller.signal,
         });
         const result = (await response.json()) as {
+            recovery?: { status: string };
+            code?: string;
             version: number;
             cartId: string;
             revision: string;
@@ -88,6 +91,24 @@ export async function validateCurrentWarehouse(
             testProviderAuthorization?: TestProviderAuthorization;
             testProviderClaimed?: boolean;
         };
+
+        if (
+            response.status === 409 &&
+            result.recovery?.status === 'review_required' &&
+            result.code === 'SUBMISSION_REVIEW_REQUIRED' &&
+            result.version === 1 &&
+            result.cartId === config.cartId &&
+            result.revision === config.validation.revision &&
+            getWarehouseCheckout()?.cartId === config.cartId &&
+            getWarehouseCheckout()?.validation.token === config.validation.token &&
+            getWarehouseCheckout()?.validation.revision === config.validation.revision &&
+            getWarehouseCheckout()?.validation.endpoint === config.validation.endpoint
+        ) {
+            requireSubmissionReview(config);
+            acceptCheckTestAuthorization(undefined);
+            acceptTestProviderAuthorization(undefined);
+            throw new Error(RECOVERY_MESSAGE);
+        }
 
         if (!response.ok)
             throw new Error(
@@ -121,6 +142,11 @@ export async function validateCurrentWarehouse(
         acceptCheckTestAuthorization(result.checkTestAuthorization);
         acceptTestProviderAuthorization(result.testProviderAuthorization);
     } catch (error) {
+        if (checkTest || testProvider) {
+            requireSubmissionReview(config);
+            throw new Error(RECOVERY_MESSAGE);
+        }
+
         if (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError'))
             throw new Error(
                 'Cannot reach warehouse verification. Check your connection and retry.',
