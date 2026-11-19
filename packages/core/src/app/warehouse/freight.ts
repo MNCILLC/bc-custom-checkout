@@ -2,6 +2,7 @@ import type { CheckoutService } from '@bigcommerce/checkout-sdk';
 
 import { getWarehouseCheckout } from './config';
 import { getWarehouseDeployment } from './deployment';
+import { setShippingQuoteStatus } from './shippingQuoteState';
 
 export interface FreightPreferences {
     fulfillmentMethod: 'ship' | 'pickup';
@@ -27,6 +28,7 @@ export function freightEndpoint(): string | undefined {
 
 export function invalidateFreight() {
     approved = undefined;
+    setShippingQuoteStatus('review');
 }
 
 export function freightApproved(pickup: boolean) {
@@ -119,6 +121,7 @@ export async function loadFreightPreferences() {
 export async function saveFreightPreferences(pickup: boolean, codes?: string[]) {
     if (!freightEndpoint()) return;
     invalidateFreight();
+    setShippingQuoteStatus('loading');
 
     const config = getWarehouseCheckout();
 
@@ -141,6 +144,7 @@ export async function approveFreightPreferences() {
     if (JSON.stringify(confirmed.preferences) !== JSON.stringify(state?.preferences))
         throw new Error('Delivery preferences changed. Reload preferences and review them.');
     approved = confirmed;
+    setShippingQuoteStatus('ready');
 }
 
 export async function assertFreightReady(service: CheckoutService) {

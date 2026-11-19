@@ -1,11 +1,19 @@
 import classNames from 'classnames';
-import React, { type FC, type ReactNode, useCallback, useEffect, useState } from 'react';
+import React, {
+    type FC,
+    type ReactNode,
+    useCallback,
+    useContext,
+    useEffect,
+    useState,
+} from 'react';
 import { CSSTransition } from 'react-transition-group';
 
 import { useCheckout, useThemeContext } from '@bigcommerce/checkout/contexts';
 import { preventDefault } from '@bigcommerce/checkout/dom-utils';
 
 import { ShopperCurrency } from '../currency';
+import { ShippingQuoteSummaryContext } from '../warehouse/ShippingQuoteSummary';
 
 import { PriceTicker } from './PriceTicker';
 import { PriceTickerPhase, usePriceChangeTicker } from './usePriceChangeTicker';
@@ -64,9 +72,18 @@ const OrderSummaryPrice: FC<OrderSummaryPriceProps> = ({
     );
     const { enhancedThemeV1 } = useThemeContext();
 
-    const { phase, displayAmount } = usePriceChangeTicker(amount, enhancedThemeV1);
+    const quote = useContext(ShippingQuoteSummaryContext);
+    const managedPrice = quote.managed && (testId === 'cart-shipping' || testId === 'cart-total');
+    const pending =
+        testId === 'cart-shipping'
+            ? quote.shipping
+            : testId === 'cart-total'
+              ? quote.total
+              : undefined;
+    const { phase, displayAmount } = usePriceChangeTicker(amount, enhancedThemeV1 && !managedPrice);
     const showDots = phase === PriceTickerPhase.Dots;
-    const displayValue = getDisplayValue(displayAmount, zeroLabel);
+    const displayValue =
+        pending ?? getDisplayValue(managedPrice ? amount : displayAmount, zeroLabel);
 
     useEffect(() => {
         if (!enhancedThemeV1) {
@@ -137,7 +154,8 @@ const OrderSummaryPrice: FC<OrderSummaryPriceProps> = ({
                     'header optimizedCheckout-headingPrimary': isOrderTotal,
                 })}
             >
-                {!showDots &&
+                {!pending &&
+                    !showDots &&
                     isNumberValue(amountBeforeDiscount) &&
                     amountBeforeDiscount !== amount && (
                         <span className="cart-priceItem-before-value">
@@ -155,7 +173,7 @@ const OrderSummaryPrice: FC<OrderSummaryPriceProps> = ({
                     </PriceTicker>
                 </span>
 
-                {superscript && !showDots && (
+                {!pending && superscript && !showDots && (
                     <sup data-test="cart-price-value-superscript">{superscript}</sup>
                 )}
             </span>

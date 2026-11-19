@@ -14,6 +14,8 @@ jest.mock('../currency', () => ({
     ),
 }));
 
+import { ShippingQuoteSummaryContext } from '../warehouse/ShippingQuoteSummary';
+
 import OrderSummaryPrice, { type OrderSummaryPriceProps } from './OrderSummaryPrice';
 
 describe('OrderSummaryPrice', () => {
@@ -390,4 +392,42 @@ describe('OrderSummaryPrice', () => {
             expect(onActionTriggered).not.toHaveBeenCalled();
         });
     });
+});
+
+describe('unconfirmed warehouse shipping summary', () => {
+    it.each(['cart-shipping', 'cart-total'])(
+        'masks stale %s through loading, failure and recovery',
+        (testId) => {
+            jest.spyOn(contexts, 'useCheckout').mockReturnValue({ selectedState: false } as never);
+
+            const view = (message?: string) => (
+                <contexts.ThemeContext.Provider value={{ enhancedThemeV1: true }}>
+                    <ShippingQuoteSummaryContext.Provider
+                        value={{ managed: true, shipping: message, total: message }}
+                    >
+                        <OrderSummaryPrice
+                            amount={319.25}
+                            amountBeforeDiscount={400}
+                            label="Price"
+                            testId={testId}
+                        />
+                    </ShippingQuoteSummaryContext.Provider>
+                </contexts.ThemeContext.Provider>
+            );
+            const { rerender } = render(view('Recalculating shipping…'));
+
+            expect(screen.getByTestId('cart-price-value')).toHaveTextContent(
+                'Recalculating shipping',
+            );
+            expect(screen.queryByText('319.25')).not.toBeInTheDocument();
+            expect(screen.queryByText('400')).not.toBeInTheDocument();
+            rerender(view('Shipping unavailable — retry'));
+            expect(screen.getByTestId('cart-price-value')).toHaveTextContent(
+                'Shipping unavailable',
+            );
+            expect(screen.queryByText('319.25')).not.toBeInTheDocument();
+            rerender(view());
+            expect(screen.getByTestId('cart-price-value')).toHaveTextContent('319.25');
+        },
+    );
 });

@@ -16,6 +16,7 @@ import {
     saveFreightPreferences,
 } from '../../warehouse/freight';
 import FreightDelivery from '../../warehouse/FreightDelivery';
+import { setShippingQuoteStatus } from '../../warehouse/shippingQuoteState';
 import { warehouseSubmissionInProgress } from '../../warehouse/submissionState';
 import { beginWarehouseTransition, validateCurrentWarehouse } from '../../warehouse/validation';
 import CheckoutStep from '../CheckoutStep';
@@ -111,6 +112,7 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
         setSwitching(true);
         setFreightReady(!freightEndpoint());
         setSwitchError('');
+        setShippingQuoteStatus('loading');
 
         const endTransition = beginWarehouseTransition();
 
@@ -159,6 +161,7 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
 
             return true;
         } catch (error) {
+            setShippingQuoteStatus('failed');
             setSwitchError(
                 error instanceof Error ? error.message : 'Unable to change fulfillment.',
             );

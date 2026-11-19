@@ -1,10 +1,12 @@
-import React, { type FunctionComponent } from 'react';
+import React, { type FunctionComponent, useContext } from 'react';
 
 import {
     TranslatedString,
     withCurrency,
     type WithCurrencyProps,
 } from '@bigcommerce/checkout/locale';
+
+import { ShippingQuoteSummaryContext } from '../warehouse/ShippingQuoteSummary';
 
 import OrderSummaryPrice from './OrderSummaryPrice';
 
@@ -20,6 +22,7 @@ const OrderSummaryTotal: FunctionComponent<OrderSummaryTotalProps & WithCurrency
     orderAmount,
     currency,
 }) => {
+    const quote = useContext(ShippingQuoteSummaryContext);
     const hasDifferentCurrency = shopperCurrencyCode !== storeCurrencyCode;
     const label = (
         <>
@@ -42,7 +45,7 @@ const OrderSummaryTotal: FunctionComponent<OrderSummaryTotalProps & WithCurrency
                 superscript={hasDifferentCurrency ? '*' : undefined}
                 testId="cart-total"
             />
-            {hasDifferentCurrency && currency && (
+            {!quote.total && hasDifferentCurrency && currency && (
                 <p className="cart-priceItem--totalNote" data-test="cart-price-item-total-note">
                     <TranslatedString
                         data={{

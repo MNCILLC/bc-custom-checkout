@@ -4,7 +4,13 @@ import {
     type StoreCurrency,
 } from '@bigcommerce/checkout-sdk';
 import classNames from 'classnames';
-import React, { type FunctionComponent, type KeyboardEvent, type ReactNode, useState } from 'react';
+import React, {
+    type FunctionComponent,
+    type KeyboardEvent,
+    type ReactNode,
+    useContext,
+    useState,
+} from 'react';
 import ReactModal from 'react-modal';
 
 import { useLocale } from '@bigcommerce/checkout/contexts';
@@ -15,6 +21,7 @@ import { CartOutstandingBalance } from '../cart/CartOutstandingBalance';
 import { CartSummaryItemImage } from '../cart/CartSummaryItemImage';
 import { useSheetDismissDrag } from '../cart/useSheetDismissDrag';
 import { type OrderSummarySubtotalsProps } from '../coupon';
+import { ShippingQuoteSummaryContext } from '../warehouse/ShippingQuoteSummary';
 
 import getItemsCount from './getItemsCount';
 import getLineItemsCount from './getLineItemsCount';
@@ -41,6 +48,7 @@ export const OrderSummaryDrawerV2: FunctionComponent<OrderSummaryDrawerV2Props> 
     bundledItems,
     ...subtotalProps
 }) => {
+    const quote = useContext(ShippingQuoteSummaryContext);
     const { nonBundledItems } = getNonBundledItems(lineItems, bundledItems);
 
     const [rootElement, setRootElement] = useState<HTMLDivElement | null>(null);
@@ -98,7 +106,14 @@ export const OrderSummaryDrawerV2: FunctionComponent<OrderSummaryDrawerV2Props> 
                             id="cart.item_count_text"
                         />
                     </span>
-                    <CartOutstandingBalance amount={total} currencyCode={shopperCurrency.code} />
+                    {quote.total ? (
+                        <span role="status">{quote.total}</span>
+                    ) : (
+                        <CartOutstandingBalance
+                            amount={total}
+                            currencyCode={shopperCurrency.code}
+                        />
+                    )}
                 </div>
                 <span className="cart-summary-bar-toggle-label body-regular optimizedCheckout-orderSummary-toggle">
                     <TranslatedString

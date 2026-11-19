@@ -4,13 +4,21 @@ import {
     type StoreCurrency,
 } from '@bigcommerce/checkout-sdk';
 import classNames from 'classnames';
-import React, { type FunctionComponent, memo, type ReactNode, useCallback, useMemo } from 'react';
+import React, {
+    type FunctionComponent,
+    memo,
+    type ReactNode,
+    useCallback,
+    useContext,
+    useMemo,
+} from 'react';
 
 import { TranslatedString } from '@bigcommerce/checkout/locale';
 import { IconGiftCertificate, ModalTrigger } from '@bigcommerce/checkout/ui';
 
 import { type OrderSummarySubtotalsProps } from '../coupon';
 import { ShopperCurrency } from '../currency';
+import { ShippingQuoteSummaryContext } from '../warehouse/ShippingQuoteSummary';
 
 import getItemsCount from './getItemsCount';
 import getLineItemsCount from './getLineItemsCount';
@@ -40,6 +48,7 @@ const OrderSummaryDrawer: FunctionComponent<
     total,
     fees,
 }) => {
+    const quote = useContext(ShippingQuoteSummaryContext);
     const nonBundledLineItems = useMemo(() => removeBundledItems(lineItems), [lineItems]);
 
     const renderModal = useCallback(
@@ -105,7 +114,7 @@ const OrderSummaryDrawer: FunctionComponent<
                     </div>
                     <div className="cartDrawer-actions">
                         <h3 className="cartDrawer-total optimizedCheckout-headingPrimary">
-                            <ShopperCurrency amount={total} />
+                            {quote.total || <ShopperCurrency amount={total} />}
                         </h3>
                     </div>
                 </div>

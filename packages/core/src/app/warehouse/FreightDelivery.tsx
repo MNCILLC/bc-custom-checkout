@@ -7,6 +7,7 @@ import {
     invalidateFreight,
     loadFreightPreferences,
 } from './freight';
+import { setShippingQuoteStatus } from './shippingQuoteState';
 
 export default function FreightDelivery({
     pickup,
@@ -33,6 +34,7 @@ export default function FreightDelivery({
         setSaved(false);
         if (reset) invalidateFreight();
         onUnready();
+        setShippingQuoteStatus('loading');
 
         try {
             const result = await loadFreightPreferences();
@@ -43,8 +45,12 @@ export default function FreightDelivery({
             if (freightApproved(pickup)) {
                 setSaved(true);
                 onReady();
+                setShippingQuoteStatus('ready');
+            } else {
+                setShippingQuoteStatus('review');
             }
         } catch {
+            setShippingQuoteStatus('failed');
             setError('Unable to load delivery preferences. Reload preferences to retry.');
         } finally {
             setLoading(false);
@@ -106,17 +112,20 @@ export default function FreightDelivery({
                         setLoading(true);
                         setError('');
                         setSaved(false);
+                        setShippingQuoteStatus('loading');
 
                         try {
                             const success = await onApply(pickup ? [] : codes);
 
                             setSaved(success);
+                            setShippingQuoteStatus(success ? 'ready' : 'failed');
                             if (!success)
                                 setError(
                                     'Delivery options were not confirmed. Reload preferences and retry.',
                                 );
                         } catch {
                             invalidateFreight();
+                            setShippingQuoteStatus('failed');
                             onUnready();
                             setError(
                                 'Delivery options were not confirmed. Reload preferences and retry.',

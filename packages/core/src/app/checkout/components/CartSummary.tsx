@@ -6,6 +6,7 @@ import { useThemeContext } from '@bigcommerce/checkout/contexts';
 import { CartSummarySkeleton, LazyContainer, MobileView } from '@bigcommerce/checkout/ui';
 
 import { retry } from '../../common/utility';
+import ShippingQuoteSummary from '../../warehouse/ShippingQuoteSummary';
 
 const CartSummaryComponent = lazy(() =>
     retry(
@@ -45,40 +46,42 @@ export const CartSummary: React.FC<CartSummaryProps> = ({ isMultiShippingMode })
     const { enhancedThemeV1 } = useThemeContext();
 
     return (
-        <MobileView>
-            {(matched) => {
-                if (matched) {
-                    if (enhancedThemeV1) {
+        <ShippingQuoteSummary>
+            <MobileView>
+                {(matched) => {
+                    if (matched) {
+                        if (enhancedThemeV1) {
+                            return (
+                                <LazyContainer loadingSkeleton={<></>}>
+                                    <aside aria-label="Cart Summary" className="layout-cart">
+                                        <CartSummaryDrawerV2
+                                            isMultiShippingMode={isMultiShippingMode}
+                                        />
+                                        <Extension region={ExtensionRegion.SummaryAfter} />
+                                    </aside>
+                                </LazyContainer>
+                            );
+                        }
+
                         return (
                             <LazyContainer loadingSkeleton={<></>}>
-                                <aside aria-label="Cart Summary" className="layout-cart">
-                                    <CartSummaryDrawerV2
-                                        isMultiShippingMode={isMultiShippingMode}
-                                    />
-                                    <Extension region={ExtensionRegion.SummaryAfter} />
-                                </aside>
+                                <Extension region={ExtensionRegion.SummaryAfter} />
+                                <CartSummaryDrawer isMultiShippingMode={isMultiShippingMode} />
                             </LazyContainer>
                         );
                     }
 
                     return (
-                        <LazyContainer loadingSkeleton={<></>}>
-                            <Extension region={ExtensionRegion.SummaryAfter} />
-                            <CartSummaryDrawer isMultiShippingMode={isMultiShippingMode} />
+                        <LazyContainer loadingSkeleton={<CartSummarySkeleton />}>
+                            <aside aria-label="Cart Summary" className="layout-cart">
+                                <CartSummaryComponent isMultiShippingMode={isMultiShippingMode} />
+                                <Extension region={ExtensionRegion.SummaryAfter} />
+                            </aside>
                         </LazyContainer>
                     );
-                }
-
-                return (
-                    <LazyContainer loadingSkeleton={<CartSummarySkeleton />}>
-                        <aside aria-label="Cart Summary" className="layout-cart">
-                            <CartSummaryComponent isMultiShippingMode={isMultiShippingMode} />
-                            <Extension region={ExtensionRegion.SummaryAfter} />
-                        </aside>
-                    </LazyContainer>
-                );
-            }}
-        </MobileView>
+                }}
+            </MobileView>
+        </ShippingQuoteSummary>
     );
 };
 
