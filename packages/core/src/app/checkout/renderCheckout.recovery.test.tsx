@@ -168,6 +168,32 @@ it('server recovery remains visible when local storage is unavailable', async ()
     await authorize();
     expectReview();
 });
+it.each([
+    [
+        503,
+        'RECOVERY_UNAVAILABLE',
+        'We can’t verify your order status right now. Do not submit again. Contact the store for help.',
+    ],
+    [503, 'UNAVAILABLE', 'Warehouse checkout is unavailable. Return to your cart and try again.'],
+    [
+        500,
+        'RECOVERY_UNAVAILABLE',
+        'Warehouse checkout is unavailable. Return to your cart and try again.',
+    ],
+] as const)('shows the appropriate guidance for %i %s', async (status, code, expected) => {
+    global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => ({ code }),
+    });
+    window.warehouseCheckout = config;
+    await act(async () => mount());
+
+    expect(screen.getByRole('alert')).toHaveTextContent(expected);
+    expect(app()).not.toHaveBeenCalled();
+    expect(window.localStorage.length).toBe(0);
+});
+
 it('an ordinary pre-attempt network failure retains authorization retry and can recover', async () => {
     global.fetch = jest
         .fn()

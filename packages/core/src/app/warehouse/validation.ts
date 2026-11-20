@@ -13,6 +13,14 @@ import {
     type TestProviderClaim,
 } from './testProvider';
 
+export class RecoveryUnavailableError extends Error {
+    constructor() {
+        super(
+            'We can’t verify your order status right now. Do not submit again. Contact the store for help.',
+        );
+    }
+}
+
 let transitions = 0;
 
 export const warehouseTransitionInProgress = () => transitions > 0;
@@ -109,6 +117,9 @@ export async function validateCurrentWarehouse(
             acceptTestProviderAuthorization(undefined);
             throw new Error(RECOVERY_MESSAGE);
         }
+
+        if (response.status === 503 && result.code === 'RECOVERY_UNAVAILABLE')
+            throw new RecoveryUnavailableError();
 
         if (!response.ok)
             throw new Error(

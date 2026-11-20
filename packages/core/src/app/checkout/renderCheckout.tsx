@@ -12,7 +12,7 @@ import {
 import { showLocalCheckoutNotice } from '../warehouse/local-navigation';
 import { installPurchaseGuards } from '../warehouse/purchaseGuards';
 import { RECOVERY_MESSAGE, submissionNeedsReview } from '../warehouse/recovery';
-import { validateCurrentWarehouse } from '../warehouse/validation';
+import { RecoveryUnavailableError, validateCurrentWarehouse } from '../warehouse/validation';
 
 import { type CheckoutAppProps } from './CheckoutApp';
 import { initWhyDidYouRender } from './wdyr';
@@ -49,19 +49,24 @@ export default function renderCheckout({
             return false;
         }
     };
-    const message = (failed: boolean) => {
+    const message = (failed: boolean, error?: unknown) => {
         if (!current()) return;
         unmountComponentAtNode(container);
 
         const recovery = recoveryRequired();
         const notice = document.createElement('div');
 
+        const failureMessage =
+            error instanceof RecoveryUnavailableError
+                ? error.message
+                : 'Warehouse checkout is unavailable. Return to your cart and try again.';
+
         notice.setAttribute('role', failed || recovery ? 'alert' : 'status');
         notice.setAttribute('data-test', 'warehouse-initialization');
         notice.textContent = recovery
             ? RECOVERY_MESSAGE
             : failed
-              ? 'Warehouse checkout is unavailable. Return to your cart and try again.'
+              ? failureMessage
               : 'Verifying your warehouse and inventory…';
         container.replaceChildren(notice);
 
@@ -118,7 +123,7 @@ export default function renderCheckout({
                     await validateCurrentWarehouse();
                 })
                 .then(mount)
-                .catch(() => message(true));
+                .catch((error: unknown) => message(true, error));
         } else {
             mount();
         }
