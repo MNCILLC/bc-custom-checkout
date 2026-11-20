@@ -105,6 +105,7 @@ import {
 } from './paymentMethod';
 import { getFilteredPaymentMethodsWithDefault } from './paymentMethodFilters';
 import { type PaymentMethodsRefreshAlertData } from './PaymentMethodsRefreshAlert';
+import useTestProviderFields from './useTestProviderFields';
 
 export interface PaymentProps {
     capabilities: Capabilities;
@@ -194,6 +195,11 @@ const Payment = (
     >();
     const [isPriceChangedAlertVisible, setIsPriceChangedAlertVisible] = useState(false);
 
+    const { methods, defaultMethod, retainTestProviderFields } = useTestProviderFields(
+        props.cart?.id,
+        props.methods,
+        props.defaultMethod,
+    );
     const isReadyRef = useRef(state.isReady);
     const grandTotalChangeUnsubscribe = useRef<() => void>();
     const billingAddressChangeUnsubscribe = useRef<() => void>();
@@ -532,6 +538,7 @@ const Payment = (
                         ),
                     };
                 },
+                (cartId) => retainTestProviderFields(cartId, selectedMethodRef.current),
             );
         } catch (error) {
             props.onUnhandledError?.(
@@ -802,11 +809,11 @@ const Payment = (
     }, [state.isReady]);
 
     useEffect(() => {
-        selectedMethodRef.current = state.selectedMethod || props.defaultMethod;
-    }, [state.selectedMethod, props.defaultMethod]);
+        selectedMethodRef.current = state.selectedMethod || defaultMethod;
+    }, [state.selectedMethod, defaultMethod]);
 
     // The only analytics emitter for method selection.
-    const effectiveSelectedMethod = state.selectedMethod || props.defaultMethod;
+    const effectiveSelectedMethod = state.selectedMethod || defaultMethod;
     const trackedSelectedMethodId = effectiveSelectedMethod
         ? getUniquePaymentMethodId(effectiveSelectedMethod.id, effectiveSelectedMethod.gateway)
         : undefined;
@@ -818,14 +825,14 @@ const Payment = (
     }, [trackedSelectedMethodId]);
 
     useFallbackWhenMethodRemoved(
-        props.methods,
+        methods,
         state.selectedMethod
             ? getUniquePaymentMethodId(state.selectedMethod.id, state.selectedMethod.gateway)
             : undefined,
-        props.defaultMethod
-            ? getUniquePaymentMethodId(props.defaultMethod.id, props.defaultMethod.gateway)
+        defaultMethod
+            ? getUniquePaymentMethodId(defaultMethod.id, defaultMethod.gateway)
             : undefined,
-        () => setSelectedMethod(props.defaultMethod),
+        () => setSelectedMethod(defaultMethod),
     );
 
     useEffect(() => {
@@ -1024,7 +1031,7 @@ const Payment = (
         checkEmbeddedSupport(methods.map(({ id }) => id));
     }, [props.methods]);
 
-    const { selectedMethod = props.defaultMethod } = state;
+    const { selectedMethod = defaultMethod } = state;
     const uniqueSelectedMethodId =
         selectedMethod && getUniquePaymentMethodId(selectedMethod.id, selectedMethod.gateway);
     // enhancedThemeV1 embeds the billing form in the payment step. Disable "Place Order"
@@ -1049,8 +1056,8 @@ const Payment = (
                     <PaymentForm
                         additionalField={props.capabilities.payment.additionalField}
                         availableStoreCredit={props.availableStoreCredit}
-                        defaultGatewayId={props.defaultMethod?.gateway}
-                        defaultMethodId={props.defaultMethod?.id || ''}
+                        defaultGatewayId={defaultMethod?.gateway}
+                        defaultMethodId={defaultMethod?.id || ''}
                         didExceedSpamLimit={state.didExceedSpamLimit}
                         disableStoreCredit={disableStoreCredit}
                         isBillingSameAsShipping={props.isBillingSameAsShipping}
@@ -1062,7 +1069,7 @@ const Payment = (
                         isStoreCreditApplied={props.isStoreCreditApplied}
                         isTermsConditionsRequired={props.isTermsConditionsRequired}
                         isUsingMultiShipping={props.isUsingMultiShipping}
-                        methods={props.methods}
+                        methods={methods}
                         methodsRefreshAlert={methodsRefreshAlert}
                         onBillingSameAsShippingChange={props.onBillingSameAsShippingChange}
                         onMethodSelect={handleMethodSelect}
@@ -1072,7 +1079,7 @@ const Payment = (
                         onSubmit={handleSubmit}
                         onUnhandledError={handleError}
                         orderExtraFields={props.orderExtraFields}
-                        selectedMethod={state.selectedMethod || props.defaultMethod}
+                        selectedMethod={selectedMethod}
                         shouldDisableSubmit={
                             (uniqueSelectedMethodId &&
                                 state.shouldDisableSubmit[uniqueSelectedMethodId]) ||

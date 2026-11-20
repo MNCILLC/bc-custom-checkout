@@ -1,4 +1,8 @@
 import { type CheckoutService } from '@bigcommerce/checkout-sdk';
+import { act, renderHook } from '@testing-library/react';
+
+import { getPaymentMethod } from '../payment/payment-methods.mock';
+import useTestProviderFields from '../payment/useTestProviderFields';
 
 import { acceptCheckTestAuthorization, beginCheckTestAttempt } from './checkTest';
 import type { WarehouseCheckoutConfig } from './config';
@@ -160,6 +164,73 @@ it('default build remains preview-only even with a server grant', async () => {
     expect(execute).not.toHaveBeenCalled();
     expect(claimCalls).toBe(0);
 });
+it.each(['complete', 'reject'])(
+    'retains the submitting form until the SDK settles: %s',
+    async (outcome) => {
+        const method = { ...getPaymentMethod(), id: 'bigpaypay', gateway: undefined };
+        const useFields = ({ cartId }: { cartId: string }) => {
+            const methods = submissionNeedsReview() ? [] : [method];
+
+            return useTestProviderFields(cartId, methods, methods[0]);
+        };
+        const initialProps = { cartId: config.cartId };
+        const { result, rerender } = renderHook(useFields, { initialProps });
+        const retain = jest.fn((cartId: string) =>
+            result.current.retainTestProviderFields(cartId, method),
+        );
+        const run = () =>
+            submitWithWarehouseValidation(
+                service,
+                async () => true,
+                execute,
+                () => choice,
+                retain,
+            );
+
+        let start!: () => void;
+        let finish!: () => void;
+        const started = new Promise<void>((resolve) => {
+            start = resolve;
+        });
+        const pending = new Promise<void>((resolve) => {
+            finish = resolve;
+        });
+
+        execute.mockImplementation(async () => {
+            start();
+            await pending;
+            if (outcome === 'reject') throw new Error('simulated payment failure');
+        });
+
+        let attempt!: Promise<unknown>;
+
+        await act(async () => {
+            attempt = run();
+            await started;
+        });
+        expect(submissionNeedsReview()).toBe(true);
+        expect(result.current.methods).toEqual([method]);
+        expect(result.current.defaultMethod).toBe(method);
+        expect(renderHook(useFields, { initialProps }).result.current.methods).toEqual([]);
+        rerender({ cartId: 'another-cart' });
+        expect(result.current.methods).toEqual([]);
+        rerender(initialProps);
+        await expect(run()).rejects.toThrow('already in progress');
+        expect(result.current.defaultMethod).toBe(method);
+
+        await act(async () => {
+            finish();
+            if (outcome === 'reject') await expect(attempt).rejects.toThrow('Do not submit again');
+            else await expect(attempt).resolves.toBeUndefined();
+        });
+        expect(result.current.methods).toEqual([]);
+        await expect(run()).rejects.toThrow('Do not submit again');
+        expect(retain).toHaveBeenCalledTimes(1);
+        expect(claimCalls).toBe(1);
+        expect(execute).toHaveBeenCalledTimes(1);
+    },
+);
+
 it('an explicit grant admits only one simulated native Test payment provider execution', async () => {
     await expect(submit()).resolves.toBe('simulated-order');
     expect(claimCalls).toBe(1);
@@ -210,7 +281,19 @@ it('method change during the claim stops execution and consumes the attempt', as
 });
 it('uncertain claim response blocks automatic retry', async () => {
     uncertain = true;
-    await expect(submit()).rejects.toThrow('Do not submit again');
+
+    const release = jest.fn();
+
+    await expect(
+        submitWithWarehouseValidation(
+            service,
+            async () => true,
+            execute,
+            () => choice,
+            () => release,
+        ),
+    ).rejects.toThrow('Do not submit again');
+    expect(release).toHaveBeenCalledTimes(1);
     uncertain = false;
     await expect(submit()).rejects.toThrow('Do not submit again');
     expect(claimCalls).toBe(1);

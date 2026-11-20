@@ -148,6 +148,7 @@ export default function WarehouseValidationGate({
             <fieldset
                 data-test="warehouse-validation-content"
                 disabled={checking || submitting || !!error || recovery}
+                {...(submitting && recovery ? { inert: '' } : {})}
                 style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
             >
                 {ready && children}

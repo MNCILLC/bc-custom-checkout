@@ -56,6 +56,7 @@ export async function submitWithWarehouseValidation<T>(
     prepare: () => Promise<boolean>,
     execute: () => Promise<T>,
     payment?: () => CheckTestPayment,
+    retainTestProviderFields?: (cartId: string) => () => void,
 ): Promise<T | undefined> {
     const config = getWarehouseCheckout();
 
@@ -99,6 +100,8 @@ export async function submitWithWarehouseValidation<T>(
             await assertFreightReady(service);
         },
         execute: async () => {
+            let releaseFields: (() => void) | undefined;
+
             try {
                 // Preview stays blocked unless this cart has an explicit test payment authorization.
                 // Isolated tests use a simulated executor; they never submit an order.
@@ -109,7 +112,15 @@ export async function submitWithWarehouseValidation<T>(
                         );
 
                     const reviewed = fingerprint();
-                    const claim = beginTestPaymentAttempt(payment?.());
+                    const choice = payment?.();
+
+                    if (choice?.methodId === 'bigpaypay' && retainTestProviderFields) {
+                        assertTestPayment(choice);
+                        // Recording the attempt immediately makes recovery hide payment methods.
+                        releaseFields = retainTestProviderFields(config.cartId);
+                    }
+
+                    const claim = beginTestPaymentAttempt(choice);
 
                     await validateCurrentWarehouse(
                         undefined,
@@ -127,6 +138,8 @@ export async function submitWithWarehouseValidation<T>(
             } catch (error) {
                 if (submissionNeedsReview()) throw new Error(RECOVERY_MESSAGE);
                 throw error;
+            } finally {
+                releaseFields?.();
             }
         },
     });
