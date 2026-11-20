@@ -28,9 +28,8 @@ it('applies selected services and marks changed options unready', async () => {
     const apply = jest.fn().mockResolvedValue(true);
     const unready = jest.fn();
 
-    render(
-        <FreightDelivery onApply={apply} onReady={jest.fn()} onUnready={unready} pickup={false} />,
-    );
+    const props = { onApply: apply, onReady: jest.fn(), onUnready: unready, pickup: false };
+    const { rerender } = render(<FreightDelivery {...props} ready={false} />);
 
     const choice = await screen.findByRole('checkbox');
 
@@ -39,7 +38,9 @@ it('applies selected services and marks changed options unready', async () => {
     expect(unready).toHaveBeenCalled();
     fireEvent.click(screen.getByText('Apply delivery options & refresh rates'));
     await waitFor(() => expect(apply).toHaveBeenCalledWith(['HYD']));
-    expect(await screen.findByRole('status')).toHaveTextContent('Delivery options saved');
+    (freightApproved as jest.Mock).mockReturnValue(true);
+    rerender(<FreightDelivery {...props} ready />);
+    expect(screen.getByRole('status')).toHaveTextContent('Delivery options saved');
 });
 it('offers a usable retry after load failure', async () => {
     (loadFreightPreferences as jest.Mock).mockRejectedValueOnce(new Error('unavailable'));
@@ -49,6 +50,7 @@ it('offers a usable retry after load failure', async () => {
             onReady={jest.fn()}
             onUnready={jest.fn()}
             pickup={false}
+            ready={false}
         />,
     );
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load');
@@ -64,6 +66,7 @@ it('handles a rejected apply without enabling continuation', async () => {
             onReady={ready}
             onUnready={jest.fn()}
             pickup={false}
+            ready={false}
         />,
     );
     await screen.findByRole('checkbox');
@@ -74,9 +77,37 @@ it('handles a rejected apply without enabling continuation', async () => {
 it('pickup hides delivery services and clears selected codes', async () => {
     const apply = jest.fn().mockResolvedValue(true);
 
-    render(<FreightDelivery onApply={apply} onReady={jest.fn()} onUnready={jest.fn()} pickup />);
+    render(
+        <FreightDelivery
+            onApply={apply}
+            onReady={jest.fn()}
+            onUnready={jest.fn()}
+            pickup
+            ready={false}
+        />,
+    );
     await waitFor(() => expect(screen.getByText('Confirm pickup preferences')).toBeEnabled());
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Confirm pickup preferences'));
     await waitFor(() => expect(apply).toHaveBeenCalledWith([]));
+});
+
+it('shows pickup confirmation when approval arrives after the replacement panel has loaded', async () => {
+    const props = { onApply: jest.fn(), onReady: jest.fn(), onUnready: jest.fn(), pickup: true };
+    const { rerender } = render(<FreightDelivery {...props} ready={false} />);
+
+    await screen.findByRole('button', { name: 'Confirm pickup preferences' });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    (freightApproved as jest.Mock).mockReturnValue(true);
+    rerender(<FreightDelivery {...props} ready />);
+    expect(screen.getByRole('status')).toHaveTextContent(
+        'Pickup confirmed. Shipping charges cleared.',
+    );
+
+    (freightApproved as jest.Mock).mockReturnValue(false);
+    rerender(<FreightDelivery {...props} ready />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(props.onApply).not.toHaveBeenCalled();
+    expect(loadFreightPreferences).toHaveBeenCalledTimes(1);
 });

@@ -11,12 +11,14 @@ import { setShippingQuoteStatus } from './shippingQuoteState';
 
 export default function FreightDelivery({
     pickup,
+    ready,
     busy = false,
     onApply,
     onReady,
     onUnready,
 }: {
     pickup: boolean;
+    ready: boolean;
     busy?: boolean;
     onApply(codes: string[]): Promise<boolean>;
     onUnready(): void;
@@ -26,12 +28,10 @@ export default function FreightDelivery({
     const [codes, setCodes] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [saved, setSaved] = useState(false);
     const enabled = !!freightEndpoint();
     const reload = async (reset = true) => {
         setLoading(true);
         setError('');
-        setSaved(false);
         if (reset) invalidateFreight();
         onUnready();
         setShippingQuoteStatus('loading');
@@ -43,7 +43,6 @@ export default function FreightDelivery({
             setCodes(result.preferences?.accessorials ?? []);
 
             if (freightApproved(pickup)) {
-                setSaved(true);
                 onReady();
                 setShippingQuoteStatus('ready');
             } else {
@@ -85,7 +84,6 @@ export default function FreightDelivery({
                                             ? [...codes, service.code]
                                             : codes.filter((code) => code !== service.code),
                                     );
-                                    setSaved(false);
                                     invalidateFreight();
                                     onUnready();
                                 }}
@@ -98,7 +96,7 @@ export default function FreightDelivery({
                         </label>
                     ))}
                 {error && <p role="alert">{error}</p>}
-                {saved && (
+                {ready && freightApproved(pickup) && (
                     <p role="status">
                         {pickup
                             ? 'Pickup confirmed. Shipping charges cleared.'
@@ -111,13 +109,12 @@ export default function FreightDelivery({
                     onClick={async () => {
                         setLoading(true);
                         setError('');
-                        setSaved(false);
+                        onUnready();
                         setShippingQuoteStatus('loading');
 
                         try {
                             const success = await onApply(pickup ? [] : codes);
 
-                            setSaved(success);
                             setShippingQuoteStatus(success ? 'ready' : 'failed');
                             if (!success)
                                 setError(

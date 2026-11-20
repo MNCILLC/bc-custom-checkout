@@ -189,6 +189,7 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
             onReady={() => setFreightReady(true)}
             onUnready={() => setFreightReady(false)}
             pickup={isPickup || !warehouse?.allowShipping}
+            ready={freightReady}
         />
     );
 
