@@ -5,7 +5,7 @@ import { getWarehouseCheckout, warehouseConsignmentsValid } from './config';
 import { assertFreightReady, freightFingerprint } from './freight';
 import { assertNoSubmissionRecovery, RECOVERY_MESSAGE, submissionNeedsReview } from './recovery';
 import { createSubmissionGuard } from './submissionGuard';
-import { setWarehouseSubmissionInProgress } from './submissionState';
+import { backgroundWarehouseChecks, setWarehouseSubmissionInProgress } from './submissionState';
 import { assertTestPayment, beginTestPaymentAttempt, canSubmitTestPayment } from './testPayment';
 import { validateCurrentWarehouse, warehouseTransitionInProgress } from './validation';
 
@@ -83,6 +83,17 @@ export async function submitWithWarehouseValidation<T>(
 
     return submit({
         prepare: async () => {
+            const check = backgroundWarehouseChecks.get(service);
+
+            if (check) {
+                const reviewed = fingerprint();
+
+                await check;
+
+                if (fingerprint() !== reviewed)
+                    throw new Error('Checkout changed. Review your checkout before retrying.');
+            }
+
             assertNoSubmissionRecovery();
 
             return prepare();

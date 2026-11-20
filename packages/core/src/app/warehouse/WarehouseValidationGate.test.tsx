@@ -1,7 +1,9 @@
+import type { CheckoutService } from '@bigcommerce/checkout-sdk/essential';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 
 import { getWarehouseDeployment } from './deployment';
+import { submitWithWarehouseValidation } from './submission';
 import { acceptTestProviderAuthorization, beginTestProviderAttempt } from './testProvider';
 import Gate from './WarehouseValidationGate';
 
@@ -10,6 +12,196 @@ afterEach(() => {
     cleanup();
     delete window.warehouseCheckout;
 });
+
+it.each(['verified', 'stale', 'changed', 'unmounted', 'preview'])(
+    'holds one payment click through an outstanding background check: %s',
+    async (outcome) => {
+        const config = {
+            version: 1 as const,
+            preview: true as const,
+            cartId: `poll-${outcome}`,
+            validation: {
+                endpoint: 'https://validator.example/validate',
+                token: 'synthetic',
+                revision: 'r1',
+                expiresAt: 9999999999,
+            },
+            warehouse: {
+                id: 'west',
+                label: 'West',
+                pickupLabel: 'West pickup',
+                locationId: 1,
+                pickupMethodId: 2,
+                allowShipping: false,
+            },
+        };
+
+        window.warehouseCheckout = config;
+        (getWarehouseDeployment as jest.Mock).mockReturnValue({
+            mode: 'staging',
+            stores: [
+                {
+                    checkoutOrigin: window.location.origin,
+                    validationEndpoint: config.validation.endpoint,
+                    allowTestProvider: outcome !== 'preview',
+                },
+            ],
+        });
+
+        const checkout = { id: config.cartId, grandTotal: 50 };
+        const loadCheckout = jest.fn().mockResolvedValue(undefined);
+        const service = {
+            subscribe: () => () => {},
+            loadCheckout,
+            getState: () => ({
+                data: {
+                    getCheckout: () => checkout,
+                    getCart: () => ({
+                        lineItems: {
+                            physicalItems: [{ id: 'i', productId: 5, variantId: 6, quantity: 1 }],
+                        },
+                    }),
+                    getConsignments: () => [
+                        {
+                            id: 'c',
+                            lineItemIds: ['i'],
+                            selectedPickupOption: { pickupMethodId: 2 },
+                        },
+                    ],
+                    getBillingAddress: () => ({ countryCode: 'US' }),
+                },
+            }),
+        } as unknown as CheckoutService;
+        const original = global.fetch;
+        const claims = jest.fn();
+        const finalValidation = jest.fn();
+        const execute = jest.fn().mockResolvedValue('simulated order');
+        const prepare = jest.fn().mockResolvedValue(true);
+        const grant = {
+            version: 1,
+            methodId: 'bigpaypay',
+            testMode: true,
+            token: 'fixture',
+            expiresAt: 9999999999,
+        };
+        const validator = jest.fn(async (_url, options) => {
+            const body = JSON.parse(options.body);
+
+            if (body.testProvider) claims();
+            else if (body.submission) finalValidation();
+
+            return {
+                ok: true,
+                json: async () => ({
+                    ...config,
+                    revision: 'r1',
+                    submission: body.submission,
+                    testProviderAuthorization: grant,
+                    testProviderClaimed: !!body.testProvider,
+                }),
+            } as Response;
+        });
+
+        global.fetch = validator;
+
+        let attempt: Promise<unknown> | undefined;
+
+        jest.useFakeTimers();
+
+        try {
+            const { unmount } = render(
+                <Gate checkoutService={service}>
+                    <form
+                        data-warehouse-validated-submit="true"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            attempt = submitWithWarehouseValidation(
+                                service,
+                                prepare,
+                                execute,
+                                () => ({
+                                    methodId: 'bigpaypay',
+                                    selectedMethodId: 'bigpaypay',
+                                    customSubmit: false,
+                                    usesStoredInstrument: false,
+                                    shouldSaveInstrument: false,
+                                }),
+                            ).catch((error: Error) => error.message);
+                        }}
+                    >
+                        <button id="checkout-payment-continue" type="submit">
+                            Place order
+                        </button>
+                    </form>
+                </Gate>,
+            );
+            const button = await screen.findByRole('button', { name: 'Place order' });
+            let finishCheck!: () => void;
+            const delayed = new Promise<void>((resolve) => {
+                finishCheck = resolve;
+            });
+
+            if (outcome === 'stale') {
+                validator.mockImplementationOnce(async () => {
+                    await delayed;
+
+                    return {
+                        ok: false,
+                        status: 409,
+                        json: async () => ({ message: 'Warehouse selection changed' }),
+                    } as Response;
+                });
+            } else {
+                loadCheckout.mockImplementationOnce(async () => {
+                    await delayed;
+                    if (outcome === 'changed') checkout.grandTotal = 75;
+                });
+            }
+
+            await act(async () => {
+                jest.advanceTimersByTime(15000);
+            });
+            expect(validator).toHaveBeenCalledTimes(2);
+            expect(button).toBeEnabled();
+            act(() => button.click());
+            expect(screen.getByRole('status')).toHaveTextContent('Verifying order');
+            expect(button).toBeDisabled();
+            act(() => button.click());
+            expect(prepare).not.toHaveBeenCalled();
+            expect(claims).not.toHaveBeenCalled();
+            expect(execute).not.toHaveBeenCalled();
+
+            if (outcome === 'unmounted') unmount();
+            await act(async () => {
+                finishCheck();
+                await attempt;
+            });
+
+            if (outcome === 'verified') {
+                await expect(attempt).resolves.toBe('simulated order');
+                expect(finalValidation).toHaveBeenCalledTimes(1);
+                expect(claims).toHaveBeenCalledTimes(1);
+                expect(execute).toHaveBeenCalledTimes(1);
+            } else {
+                const reason =
+                    outcome === 'stale'
+                        ? 'Warehouse selection changed'
+                        : outcome === 'preview'
+                          ? 'Preview only'
+                          : 'Checkout changed';
+
+                await expect(attempt).resolves.toContain(reason);
+                if (outcome === 'stale')
+                    expect(screen.getByRole('alert')).toHaveTextContent(reason);
+                expect(claims).not.toHaveBeenCalled();
+                expect(execute).not.toHaveBeenCalled();
+            }
+        } finally {
+            jest.useRealTimers();
+            global.fetch = original;
+        }
+    },
+);
 it('keeps payment disabled and shows recovery after a consumed claim even if ordinary validation offers a grant', async () => {
     const config: any = {
         version: 1,
