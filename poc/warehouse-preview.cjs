@@ -130,6 +130,10 @@ async function attachPreview(context, page, options) {
         }
         if (phase === 'app' && request.isNavigationRequest() && url.origin === checkoutOrigin && url.pathname === '/checkout') return route.fulfill({ contentType: 'text/html', body: shell });
         if (phase === 'session' && request.resourceType() === 'script' && new URL(request.frame().url()).pathname.replace(/\/$/, '') === '/checkout') return route.abort();
+        if (url.origin === storefrontOrigin && request.isNavigationRequest() && request.method() === 'GET' && /(?:^|\/)checkout\/?$/.test(url.pathname)) {
+            url.searchParams.set('handoff', 'json');
+            return route.continue({ url: url.href });
+        }
         return route.continue();
     });
     async function openHandoff(handoff) {
