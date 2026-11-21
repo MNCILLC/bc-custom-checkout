@@ -1,11 +1,15 @@
 import classNames from 'classnames';
-import React, { type FunctionComponent, memo } from 'react';
+import React, { type FunctionComponent, memo, useSyncExternalStore } from 'react';
 
 import { useThemeContext } from '@bigcommerce/checkout/contexts';
 import { TranslatedString } from '@bigcommerce/checkout/locale';
 import { Button, ButtonSize, ButtonVariant, IconBolt } from '@bigcommerce/checkout/ui';
 
 import { withCheckout } from '../checkout';
+import {
+    getLineItemLimitMessage,
+    subscribeTestProviderEligibility,
+} from '../warehouse/testProvider';
 
 import { PaymentMethodId, PaymentMethodType } from './paymentMethod';
 
@@ -153,9 +157,14 @@ const PaymentSubmitButton: FunctionComponent<
     isComplete,
 }) => {
     const { enhancedThemeV1 } = useThemeContext();
+    const lineItemLimitMessage = useSyncExternalStore(
+        subscribeTestProviderEligibility,
+        getLineItemLimitMessage,
+    );
 
     return (
         <Button
+            aria-describedby={lineItemLimitMessage ? 'warehouse-line-item-limit' : undefined}
             className={classNames(
                 {
                     [`payment-submit-button-${methodId}`]: providersWithCustomClasses.includes(
@@ -165,7 +174,7 @@ const PaymentSubmitButton: FunctionComponent<
                 'sub-header',
             )}
             data-test="payment-submit-button"
-            disabled={isInitializing || isSubmitting || isDisabled}
+            disabled={isInitializing || isSubmitting || isDisabled || !!lineItemLimitMessage}
             id="checkout-payment-continue"
             isFullWidth
             isLoading={isSubmitting}

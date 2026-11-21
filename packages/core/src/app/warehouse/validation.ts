@@ -11,6 +11,7 @@ import {
     acceptTestProviderAuthorization,
     type TestProviderAuthorization,
     type TestProviderClaim,
+    type TestProviderIneligibility,
 } from './testProvider';
 
 export class RecoveryUnavailableError extends Error {
@@ -98,6 +99,7 @@ export async function validateCurrentWarehouse(
             checkTestClaimed?: boolean;
             testProviderAuthorization?: TestProviderAuthorization;
             testProviderClaimed?: boolean;
+            testProviderIneligibility?: TestProviderIneligibility;
         };
 
         if (
@@ -151,7 +153,10 @@ export async function validateCurrentWarehouse(
         // Fulfillment policy is supplied by the authenticated server response.
         window.warehouseCheckout = verified;
         acceptCheckTestAuthorization(result.checkTestAuthorization);
-        acceptTestProviderAuthorization(result.testProviderAuthorization);
+        acceptTestProviderAuthorization(
+            result.testProviderAuthorization,
+            result.testProviderIneligibility,
+        );
     } catch (error) {
         if (checkTest || testProvider) {
             requireSubmissionReview(config);

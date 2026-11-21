@@ -149,6 +149,32 @@ const submit = () =>
         () => ({ ...choice }),
     );
 
+it('blocks form submission when revalidation reports the line limit before claiming', async () => {
+    jest.mocked(global.fetch).mockImplementationOnce(async (_url, options) => {
+        const body = JSON.parse(options?.body as string);
+
+        expect(body.testProvider).toBeUndefined();
+
+        return {
+            ok: true,
+            json: async () => ({
+                version: 1,
+                cartId: config.cartId,
+                revision: config.validation.revision,
+                warehouse: config.warehouse,
+                submission: body.submission,
+                testProviderIneligibility: { code: 'MAX_LINE_ITEMS_EXCEEDED', maxLineItems: 1 },
+            }),
+        } as Response;
+    });
+
+    await expect(submit()).rejects.toThrow('one line item per order');
+    expect(canSubmitTestProvider()).toBe(false);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(claimCalls).toBe(0);
+    expect(execute).not.toHaveBeenCalled();
+});
+
 it('default build remains preview-only even with a server grant', async () => {
     deployment.mockReturnValue({
         mode: 'staging',
