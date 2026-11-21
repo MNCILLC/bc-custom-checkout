@@ -11,7 +11,8 @@ import {
 import { createLegacyPaymentStrategy } from '@bigcommerce/checkout-sdk/integrations/legacy';
 import { memoizeOne } from '@bigcommerce/memoize';
 import { find, noop } from 'lodash';
-import React, { Component, type ReactNode } from 'react';
+import React, { Component, Fragment, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { type ObjectSchema } from 'yup';
 
 import { type CheckoutContextProps } from '@bigcommerce/checkout/contexts';
@@ -21,6 +22,7 @@ import { type PaymentFormValues } from '@bigcommerce/checkout/payment-integratio
 import { LoadingOverlay } from '@bigcommerce/checkout/ui';
 
 import { withCheckout } from '../../checkout';
+import { isErrorWithType } from '../../common/error';
 import { connectFormik, type ConnectFormikProps } from '../../common/form';
 import {
     configureCardValidator,
@@ -75,6 +77,7 @@ interface WithCheckoutCreditCardPaymentMethodProps {
 }
 
 interface CreditCardPaymentMethodState {
+    hostedFieldsetKey: number;
     focusedHostedFieldType?: HostedFieldType;
     isAddingNewCard: boolean;
     selectedInstrumentId?: string;
@@ -91,11 +94,18 @@ class CreditCardPaymentMethod extends Component<
     CreditCardPaymentMethodState
 > {
     state: CreditCardPaymentMethodState = {
+        hostedFieldsetKey: 0,
         isAddingNewCard: false,
         isPreloaderOn: true,
     };
 
+    private mounted = false;
+    private fieldTimer?: number;
+    private holdingSubmit = false;
+
     async componentDidMount(): Promise<void> {
+        this.mounted = true;
+
         const {
             initializePayment,
             isInstrumentFeatureAvailable: isInstrumentFeatureAvailableProp,
@@ -113,20 +123,97 @@ class CreditCardPaymentMethod extends Component<
                 await loadInstruments();
             }
 
-            await initializePayment(
-                {
-                    gatewayId: method.gateway,
-                    methodId: method.id,
-                    integrations: [createLegacyPaymentStrategy],
-                },
-                this.getSelectedInstrument(),
-            ).then(() => this.setState({ isPreloaderOn: false }));
+            if (!this.mounted) return;
+
+            const instrument = this.getSelectedInstrument();
+            const initialize = () =>
+                initializePayment(
+                    {
+                        gatewayId: method.gateway,
+                        methodId: method.id,
+                        integrations: [createLegacyPaymentStrategy],
+                    },
+                    instrument,
+                );
+
+            if (
+                method.id === 'bigpaypay' &&
+                !method.gateway &&
+                this.props.cardFieldset &&
+                !instrument
+            ) {
+                await this.initializeTestProviderFields(initialize);
+            } else {
+                await initialize();
+            }
+
+            if (this.mounted) this.setState({ isPreloaderOn: false });
         } catch (error) {
-            onUnhandledError(error);
+            if (this.mounted) onUnhandledError(error);
         }
     }
 
+    private async initializeTestProviderFields(initialize: () => Promise<CheckoutSelectors>) {
+        const { disableSubmit, language, method } = this.props;
+
+        this.holdingSubmit = true;
+        disableSubmit(method, true);
+
+        const attachFields = async (): Promise<boolean> => {
+            let timedOut = false;
+
+            // Detaching the incomplete fields cancels the SDK's pending attach and releases
+            // its payment queue. Start a new initialization only after that cancellation.
+            this.fieldTimer = window.setTimeout(() => {
+                timedOut = true;
+                flushSync(() =>
+                    this.setState(({ hostedFieldsetKey }) => ({
+                        hostedFieldsetKey: hostedFieldsetKey + 1,
+                    })),
+                );
+            }, 30_000);
+
+            try {
+                await initialize();
+                if (!this.mounted) return false;
+                if (!timedOut) return true;
+
+                // A late success still owns the form whose fields were replaced.
+                await this.props.deinitializePayment({
+                    methodId: method.id,
+                    gatewayId: method.gateway,
+                });
+            } catch (error) {
+                if (!this.mounted) return false;
+
+                if (
+                    !timedOut ||
+                    !isErrorWithType(error) ||
+                    error.type !== 'unexpected_detachment'
+                ) {
+                    throw error;
+                }
+            } finally {
+                window.clearTimeout(this.fieldTimer);
+            }
+
+            return false;
+        };
+
+        const ready = (await attachFields()) || (this.mounted && (await attachFields()));
+
+        if (!this.mounted) return;
+        if (!ready) throw new Error(language.translate('payment.payment_method_unavailable_error'));
+
+        this.holdingSubmit = false;
+        disableSubmit(method, false);
+    }
+
     async componentWillUnmount(): Promise<void> {
+        this.mounted = false;
+        window.clearTimeout(this.fieldTimer);
+        if (this.holdingSubmit) this.props.disableSubmit(this.props.method, false);
+
         const {
             deinitializePayment,
             method,
@@ -249,7 +336,9 @@ class CreditCardPaymentMethod extends Component<
                         />
                     )}
 
-                    {shouldShowCreditCardFieldset && cardFieldset}
+                    {shouldShowCreditCardFieldset && cardFieldset && (
+                        <Fragment key={this.state.hostedFieldsetKey}>{cardFieldset}</Fragment>
+                    )}
 
                     {isInstrumentFeatureAvailableProp && (
                         <StoreInstrumentFieldset
