@@ -40,12 +40,33 @@ describe('PaymentSubmitButton', () => {
         );
     });
 
-    it.each(['line item', 'quantity'])('handles the Powell pickup %s limit', async (limit) => {
+    it.each([
+        {
+            limit: 'line item',
+            initialQuantity: 5,
+            reason: { code: 'MAX_LINE_ITEMS_EXCEEDED', maxLineItems: 1 },
+            warning: 'one line item per order',
+        },
+        {
+            limit: 'quantity',
+            initialQuantity: 5,
+            reason: { code: 'MAX_QUANTITY_EXCEEDED', maxQuantity: 5 },
+            warning: 'up to 5 units per order',
+        },
+        {
+            limit: 'total',
+            initialQuantity: 3,
+            reason: { code: 'MAX_GRAND_TOTAL_EXCEEDED', maxGrandTotal: 948.38, currency: 'USD' },
+            warning:
+                'The maximum order total is $948.38. Return to your cart and reduce the total to continue.',
+        },
+    ])('handles the pickup $limit limit', async ({ limit, initialQuantity, reason, warning }) => {
         const cart = getCart();
 
         cart.lineItems.digitalItems = [];
 
         const endpoint = 'https://validator.example/validate';
+        const forney = limit === 'total';
         const config = {
             version: 1 as const,
             preview: true as const,
@@ -57,12 +78,12 @@ describe('PaymentSubmitButton', () => {
                 expiresAt: 9999999999,
             },
             warehouse: {
-                id: 'powell',
-                label: 'Powell',
-                pickupLabel: 'Powell pickup',
-                locationId: 2,
-                pickupMethodId: 2,
-                allowShipping: false,
+                id: forney ? 'forney' : 'powell',
+                label: forney ? 'Forney' : 'Powell',
+                pickupLabel: forney ? 'Forney pickup' : 'Powell pickup',
+                locationId: forney ? 1 : 2,
+                pickupMethodId: forney ? 1 : 2,
+                allowShipping: forney,
             },
         };
         const originalFetch = global.fetch;
@@ -82,12 +103,14 @@ describe('PaymentSubmitButton', () => {
         const items = cart.lineItems.physicalItems;
         const first = items[0];
 
-        first.quantity = 5;
-
-        const quantityLimit = limit === 'quantity';
-        const denial = quantityLimit
-            ? { code: 'MAX_QUANTITY_EXCEEDED', maxQuantity: 5 }
-            : { code: 'MAX_LINE_ITEMS_EXCEEDED', maxLineItems: 1 };
+        first.quantity = initialQuantity;
+        if (forney)
+            Object.assign(first, {
+                name: 'The Showgirl',
+                sku: 'CBFT003',
+                productId: 243,
+                salePrice: 239.6,
+            });
 
         let generation = 0;
         const validate = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -95,9 +118,10 @@ describe('PaymentSubmitButton', () => {
             expect(init?.body).toBe(JSON.stringify({ cartId: cart.id, revision: 'r1' }));
             generation += 1;
 
+            const overTotal = forney && first.quantity * first.salePrice > 948.38;
             const result =
-                first.quantity > 5 || items.length > 1
-                    ? { testProviderIneligibility: denial }
+                overTotal || first.quantity > 5 || items.length > 1
+                    ? { testProviderIneligibility: reason }
                     : {
                           testProviderAuthorization: {
                               version: 1,
@@ -144,7 +168,7 @@ describe('PaymentSubmitButton', () => {
             const initial = testProviderAuthorization();
 
             expect(initial).toBeDefined();
-            if (quantityLimit) first.quantity = 6;
+            if (limit !== 'line item') first.quantity += 1;
             else
                 items.push({
                     ...first,
@@ -153,16 +177,14 @@ describe('PaymentSubmitButton', () => {
                     sku: 'SECOND',
                 });
             await refresh();
-            expect(await screen.findByRole('alert')).toHaveTextContent(
-                quantityLimit ? 'up to 5 units per order' : 'one line item per order',
-            );
+            expect(await screen.findByRole('alert')).toHaveTextContent(warning);
             expect(placeOrder).toHaveAccessibleDescription(/return to your cart/i);
             expect(placeOrder).toBeDisabled();
             expect(testProviderAuthorization()).toBeUndefined();
             fireEvent.click(placeOrder);
             expect(validate).toHaveBeenCalledTimes(2);
 
-            if (quantityLimit) first.quantity = 5;
+            if (limit !== 'line item') first.quantity = initialQuantity;
             else items.pop();
             await refresh();
             await waitFor(() => expect(placeOrder).toBeEnabled());

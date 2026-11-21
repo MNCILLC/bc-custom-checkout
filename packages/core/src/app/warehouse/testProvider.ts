@@ -31,7 +31,8 @@ let authorization:
 
 export type TestProviderIneligibility =
     | { code: 'MAX_LINE_ITEMS_EXCEEDED'; maxLineItems: number }
-    | { code: 'MAX_QUANTITY_EXCEEDED'; maxQuantity: number };
+    | { code: 'MAX_QUANTITY_EXCEEDED'; maxQuantity: number }
+    | { code: 'MAX_GRAND_TOTAL_EXCEEDED'; maxGrandTotal: number; currency: string };
 
 const eligibilityChanged = 'warehouse-test-provider-eligibility';
 let cartLimitBlock: { config: WarehouseCheckoutConfig; message: string } | undefined;
@@ -49,9 +50,31 @@ export function getCartLimitMessage(): string | undefined {
 }
 
 function describeCartLimit(reason: TestProviderIneligibility): string {
-    if (reason.code === 'MAX_QUANTITY_EXCEEDED') {
-        const limit = reason.maxQuantity;
+    if (reason.code === 'MAX_GRAND_TOTAL_EXCEEDED') {
+        const { currency, maxGrandTotal } = reason;
 
+        if (
+            !Number.isFinite(maxGrandTotal) ||
+            maxGrandTotal <= 0 ||
+            typeof currency !== 'string' ||
+            !/^[A-Z]{3}$/.test(currency)
+        )
+            throw new Error('Invalid Test payment provider cart limit.');
+
+        const cap = new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(
+            maxGrandTotal,
+        );
+
+        return `The maximum order total is ${cap}. Return to your cart and reduce the total to continue.`;
+    }
+
+    const limit =
+        reason.code === 'MAX_QUANTITY_EXCEEDED' ? reason.maxQuantity : reason.maxLineItems;
+
+    if (!Number.isSafeInteger(limit) || limit < 1)
+        throw new Error('Invalid Test payment provider cart limit.');
+
+    if (reason.code === 'MAX_QUANTITY_EXCEEDED') {
         return `Checkout allows up to ${limit} ${limit === 1 ? 'unit' : 'units'} per order. Return to your cart and reduce the total quantity to continue.`;
     }
 
@@ -84,18 +107,15 @@ export function acceptTestProviderAuthorization(
     if (
         config &&
         (ineligibility?.code === 'MAX_LINE_ITEMS_EXCEEDED' ||
-            ineligibility?.code === 'MAX_QUANTITY_EXCEEDED')
+            ineligibility?.code === 'MAX_QUANTITY_EXCEEDED' ||
+            ineligibility?.code === 'MAX_GRAND_TOTAL_EXCEEDED')
     ) {
-        const limit =
-            ineligibility.code === 'MAX_QUANTITY_EXCEEDED'
-                ? ineligibility.maxQuantity
-                : ineligibility.maxLineItems;
+        if (value) throw new Error('Invalid Test payment provider cart limit.');
 
-        if (value || typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1)
-            throw new Error('Invalid Test payment provider cart limit.');
+        const message = describeCartLimit(ineligibility);
 
         if (testProviderOptedIn()) {
-            cartLimitBlock = { config, message: describeCartLimit(ineligibility) };
+            cartLimitBlock = { config, message };
         }
     }
 

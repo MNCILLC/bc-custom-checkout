@@ -155,6 +155,10 @@ it.each([
         message: 'one line item per order',
     },
     {
+        reason: { code: 'MAX_GRAND_TOTAL_EXCEEDED', maxGrandTotal: 948.38, currency: 'USD' },
+        message: 'maximum order total is $948.38',
+    },
+    {
         reason: { code: 'MAX_QUANTITY_EXCEEDED', maxQuantity: 5 },
         message: 'up to 5 units per order',
     },
@@ -186,6 +190,21 @@ it.each([
         expect(execute).not.toHaveBeenCalled();
     },
 );
+
+it.each([
+    { maxGrandTotal: NaN, currency: 'USD' },
+    { maxGrandTotal: -1, currency: 'USD' },
+    { maxGrandTotal: 948.38, currency: 'invalid' },
+])('rejects malformed monetary limits and clears the prior grant', (invalid) => {
+    acceptTestProviderAuthorization(grant());
+    expect(() =>
+        acceptTestProviderAuthorization(undefined, {
+            code: 'MAX_GRAND_TOTAL_EXCEEDED',
+            ...invalid,
+        }),
+    ).toThrow('Invalid Test payment provider cart limit');
+    expect(canSubmitTestProvider()).toBe(false);
+});
 
 it('default build remains preview-only even with a server grant', async () => {
     deployment.mockReturnValue({
