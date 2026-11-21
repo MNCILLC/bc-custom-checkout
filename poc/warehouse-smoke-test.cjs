@@ -62,7 +62,7 @@ async function run() {
         await expect(page.locator('#warehouse-choice')).toBeEnabled();
         await expect.poll(async () => {
             if (new URL(page.url()).origin === new URL(storefrontUrl).origin && /^\/cart\/?$/.test(new URL(page.url()).pathname)) {
-                const button = page.locator('button:visible').filter({hasText:/^Preview checkout$/});
+                const button = page.getByRole('button', { name: 'Checkout', exact: true });
                 if (await button.isEnabled()) await button.click();
             }
             return preview.events.find(event => event.path === '/session-sync')?.status;
@@ -190,7 +190,7 @@ async function run() {
             const oldRevision = preview.handoff.validation.revision;
             await expect.poll(async () => {
                 if (new URL(page.url()).origin === new URL(storefrontUrl).origin && /^\/cart\/?$/.test(new URL(page.url()).pathname)) {
-                    const button = page.locator('button:visible').filter({hasText:/^Preview checkout$/});
+                    const button = page.getByRole('button', { name: 'Checkout', exact: true });
                     if (await button.isEnabled()) await button.click();
                 }
                 return preview.handoff.validation.revision !== oldRevision;

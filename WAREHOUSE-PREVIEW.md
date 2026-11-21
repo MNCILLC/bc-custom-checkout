@@ -95,7 +95,7 @@ node poc/warehouse-smoke-test.cjs
 ```
 
 This opens visible Chrome, signs in through the storefront, selects the warehouse,
-adds one unit, and follows Preview checkout. It checks session-sync 302, the
+adds one unit, and follows Checkout. It checks session-sync 302, the
 signed-in customer and matching cart, enhanced styling, the configured native
 pickup method, refresh persistence, and return-to-cart session continuity.
 It does not use the SDK sign-in fallback, submit an order, or process a payment.
