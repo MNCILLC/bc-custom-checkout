@@ -149,31 +149,43 @@ const submit = () =>
         () => ({ ...choice }),
     );
 
-it('blocks form submission when revalidation reports the line limit before claiming', async () => {
-    jest.mocked(global.fetch).mockImplementationOnce(async (_url, options) => {
-        const body = JSON.parse(options?.body as string);
+it.each([
+    {
+        reason: { code: 'MAX_LINE_ITEMS_EXCEEDED', maxLineItems: 1 },
+        message: 'one line item per order',
+    },
+    {
+        reason: { code: 'MAX_QUANTITY_EXCEEDED', maxQuantity: 5 },
+        message: 'up to 5 units per order',
+    },
+])(
+    'blocks form submission before claiming when revalidation returns $reason.code',
+    async ({ reason, message }) => {
+        jest.mocked(global.fetch).mockImplementationOnce(async (_url, options) => {
+            const body = JSON.parse(options?.body as string);
 
-        expect(body.testProvider).toBeUndefined();
+            expect(body.testProvider).toBeUndefined();
 
-        return {
-            ok: true,
-            json: async () => ({
-                version: 1,
-                cartId: config.cartId,
-                revision: config.validation.revision,
-                warehouse: config.warehouse,
-                submission: body.submission,
-                testProviderIneligibility: { code: 'MAX_LINE_ITEMS_EXCEEDED', maxLineItems: 1 },
-            }),
-        } as Response;
-    });
+            return {
+                ok: true,
+                json: async () => ({
+                    version: 1,
+                    cartId: config.cartId,
+                    revision: config.validation.revision,
+                    warehouse: config.warehouse,
+                    submission: body.submission,
+                    testProviderIneligibility: reason,
+                }),
+            } as Response;
+        });
 
-    await expect(submit()).rejects.toThrow('one line item per order');
-    expect(canSubmitTestProvider()).toBe(false);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(claimCalls).toBe(0);
-    expect(execute).not.toHaveBeenCalled();
-});
+        await expect(submit()).rejects.toThrow(message);
+        expect(canSubmitTestProvider()).toBe(false);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect(claimCalls).toBe(0);
+        expect(execute).not.toHaveBeenCalled();
+    },
+);
 
 it('default build remains preview-only even with a server grant', async () => {
     deployment.mockReturnValue({

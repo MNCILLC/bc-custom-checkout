@@ -40,7 +40,7 @@ describe('PaymentSubmitButton', () => {
         );
     });
 
-    it('explains the authenticated line limit and restores Place order after the extra SKU is removed', async () => {
+    it.each(['line item', 'quantity'])('handles the Powell pickup %s limit', async (limit) => {
         const cart = getCart();
 
         cart.lineItems.digitalItems = [];
@@ -74,12 +74,21 @@ describe('PaymentSubmitButton', () => {
                     checkoutOrigin: window.location.origin,
                     validationEndpoint: endpoint,
                     allowTestProvider: true,
+                    allowCheckTest: false,
                 },
             ],
         });
 
         const items = cart.lineItems.physicalItems;
         const first = items[0];
+
+        first.quantity = 5;
+
+        const quantityLimit = limit === 'quantity';
+        const denial = quantityLimit
+            ? { code: 'MAX_QUANTITY_EXCEEDED', maxQuantity: 5 }
+            : { code: 'MAX_LINE_ITEMS_EXCEEDED', maxLineItems: 1 };
+
         let generation = 0;
         const validate = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
             expect(url).toBe(endpoint);
@@ -87,13 +96,8 @@ describe('PaymentSubmitButton', () => {
             generation += 1;
 
             const result =
-                items.length > 1
-                    ? {
-                          testProviderIneligibility: {
-                              code: 'MAX_LINE_ITEMS_EXCEEDED',
-                              maxLineItems: 1,
-                          },
-                      }
+                first.quantity > 5 || items.length > 1
+                    ? { testProviderIneligibility: denial }
                     : {
                           testProviderAuthorization: {
                               version: 1,
@@ -140,24 +144,30 @@ describe('PaymentSubmitButton', () => {
             const initial = testProviderAuthorization();
 
             expect(initial).toBeDefined();
-            items.push({
-                ...first,
-                id: 'second-line',
-                productId: first.productId + 1,
-                sku: 'SECOND',
-            });
+            if (quantityLimit) first.quantity = 6;
+            else
+                items.push({
+                    ...first,
+                    id: 'second-line',
+                    productId: first.productId + 1,
+                    sku: 'SECOND',
+                });
             await refresh();
-            expect(await screen.findByRole('alert')).toHaveTextContent('one line item per order');
+            expect(await screen.findByRole('alert')).toHaveTextContent(
+                quantityLimit ? 'up to 5 units per order' : 'one line item per order',
+            );
             expect(placeOrder).toHaveAccessibleDescription(/return to your cart/i);
             expect(placeOrder).toBeDisabled();
             expect(testProviderAuthorization()).toBeUndefined();
             fireEvent.click(placeOrder);
             expect(validate).toHaveBeenCalledTimes(2);
 
-            items.pop();
+            if (quantityLimit) first.quantity = 5;
+            else items.pop();
             await refresh();
             await waitFor(() => expect(placeOrder).toBeEnabled());
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+            expect(placeOrder).not.toHaveAttribute('aria-describedby');
             expect(testProviderAuthorization()?.token).toBe('grant-3');
             expect(testProviderAuthorization()?.token).not.toBe(initial?.token);
             expect(sdkSubmit).not.toHaveBeenCalled();

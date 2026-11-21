@@ -4,7 +4,7 @@ import React, { type ReactNode, useEffect, useRef, useState, useSyncExternalStor
 import { getWarehouseCheckout } from './config';
 import { RECOVERY_EVENT, RECOVERY_MESSAGE, submissionNeedsReview } from './recovery';
 import { backgroundWarehouseChecks, warehouseSubmissionInProgress } from './submissionState';
-import { getLineItemLimitMessage, subscribeTestProviderEligibility } from './testProvider';
+import { getCartLimitMessage, subscribeTestProviderEligibility } from './testProvider';
 import { validateCurrentWarehouse, warehouseTransitionInProgress } from './validation';
 
 export default function WarehouseValidationGate({
@@ -20,9 +20,9 @@ export default function WarehouseValidationGate({
     const [retry, setRetry] = useState(0);
     const [recovery, setRecovery] = useState(submissionNeedsReview());
     const [submitting, setSubmitting] = useState(warehouseSubmissionInProgress());
-    const lineItemLimitMessage = useSyncExternalStore(
+    const cartLimitMessage = useSyncExternalStore(
         subscribeTestProviderEligibility,
-        getLineItemLimitMessage,
+        getCartLimitMessage,
     );
     const content = useRef<HTMLFieldSetElement>(null);
 
@@ -168,9 +168,9 @@ export default function WarehouseValidationGate({
                     )}
                 </div>
             )}
-            {lineItemLimitMessage && !error && !recovery && (
+            {cartLimitMessage && !error && !recovery && (
                 <div id="warehouse-line-item-limit" role="alert" style={{ padding: '16px 24px' }}>
-                    {lineItemLimitMessage}
+                    {cartLimitMessage}
                 </div>
             )}
             <fieldset

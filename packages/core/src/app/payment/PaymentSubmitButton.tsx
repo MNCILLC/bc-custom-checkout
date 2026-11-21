@@ -6,10 +6,7 @@ import { TranslatedString } from '@bigcommerce/checkout/locale';
 import { Button, ButtonSize, ButtonVariant, IconBolt } from '@bigcommerce/checkout/ui';
 
 import { withCheckout } from '../checkout';
-import {
-    getLineItemLimitMessage,
-    subscribeTestProviderEligibility,
-} from '../warehouse/testProvider';
+import { getCartLimitMessage, subscribeTestProviderEligibility } from '../warehouse/testProvider';
 
 import { PaymentMethodId, PaymentMethodType } from './paymentMethod';
 
@@ -157,14 +154,14 @@ const PaymentSubmitButton: FunctionComponent<
     isComplete,
 }) => {
     const { enhancedThemeV1 } = useThemeContext();
-    const lineItemLimitMessage = useSyncExternalStore(
+    const cartLimitMessage = useSyncExternalStore(
         subscribeTestProviderEligibility,
-        getLineItemLimitMessage,
+        getCartLimitMessage,
     );
 
     return (
         <Button
-            aria-describedby={lineItemLimitMessage ? 'warehouse-line-item-limit' : undefined}
+            aria-describedby={cartLimitMessage ? 'warehouse-line-item-limit' : undefined}
             className={classNames(
                 {
                     [`payment-submit-button-${methodId}`]: providersWithCustomClasses.includes(
@@ -174,7 +171,7 @@ const PaymentSubmitButton: FunctionComponent<
                 'sub-header',
             )}
             data-test="payment-submit-button"
-            disabled={isInitializing || isSubmitting || isDisabled || !!lineItemLimitMessage}
+            disabled={isInitializing || isSubmitting || isDisabled || !!cartLimitMessage}
             id="checkout-payment-continue"
             isFullWidth
             isLoading={isSubmitting}

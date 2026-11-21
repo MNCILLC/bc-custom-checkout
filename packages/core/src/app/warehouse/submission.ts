@@ -7,7 +7,7 @@ import { assertNoSubmissionRecovery, RECOVERY_MESSAGE, submissionNeedsReview } f
 import { createSubmissionGuard } from './submissionGuard';
 import { backgroundWarehouseChecks, setWarehouseSubmissionInProgress } from './submissionState';
 import { assertTestPayment, beginTestPaymentAttempt, canSubmitTestPayment } from './testPayment';
-import { getLineItemLimitMessage } from './testProvider';
+import { getCartLimitMessage } from './testProvider';
 import { validateCurrentWarehouse, warehouseTransitionInProgress } from './validation';
 
 export interface SubmissionSnapshot {
@@ -110,9 +110,9 @@ export async function submitWithWarehouseValidation<T>(
             await assertFreightReady(service);
             await validateCurrentWarehouse(undefined, submissionSnapshot(service));
 
-            const lineItemLimitMessage = getLineItemLimitMessage();
+            const cartLimitMessage = getCartLimitMessage();
 
-            if (lineItemLimitMessage) throw new Error(lineItemLimitMessage);
+            if (cartLimitMessage) throw new Error(cartLimitMessage);
             await assertFreightReady(service);
         },
         execute: async () => {

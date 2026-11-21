@@ -29,13 +29,12 @@ let authorization:
     | { grant: TestProviderAuthorization; cartId: string; revision: string; credential: string }
     | undefined;
 
-export interface TestProviderIneligibility {
-    code: string;
-    maxLineItems?: number;
-}
+export type TestProviderIneligibility =
+    | { code: 'MAX_LINE_ITEMS_EXCEEDED'; maxLineItems: number }
+    | { code: 'MAX_QUANTITY_EXCEEDED'; maxQuantity: number };
 
 const eligibilityChanged = 'warehouse-test-provider-eligibility';
-let lineItemBlock: { config: WarehouseCheckoutConfig; message: string } | undefined;
+let cartLimitBlock: { config: WarehouseCheckoutConfig; message: string } | undefined;
 
 export function subscribeTestProviderEligibility(listener: () => void) {
     window.addEventListener(eligibilityChanged, listener);
@@ -43,10 +42,22 @@ export function subscribeTestProviderEligibility(listener: () => void) {
     return () => window.removeEventListener(eligibilityChanged, listener);
 }
 
-export function getLineItemLimitMessage(): string | undefined {
-    return lineItemBlock && window.warehouseCheckout === lineItemBlock.config
-        ? lineItemBlock.message
+export function getCartLimitMessage(): string | undefined {
+    return cartLimitBlock && window.warehouseCheckout === cartLimitBlock.config
+        ? cartLimitBlock.message
         : undefined;
+}
+
+function describeCartLimit(reason: TestProviderIneligibility): string {
+    if (reason.code === 'MAX_QUANTITY_EXCEEDED') {
+        const limit = reason.maxQuantity;
+
+        return `Checkout allows up to ${limit} ${limit === 1 ? 'unit' : 'units'} per order. Return to your cart and reduce the total quantity to continue.`;
+    }
+
+    return reason.maxLineItems === 1
+        ? 'Checkout allows one line item per order. Return to your cart and keep only one product or variant to continue.'
+        : `Checkout allows up to ${reason.maxLineItems} line items per order. Return to your cart and reduce the number of line items to continue.`;
 }
 
 function testProviderOptedIn() {
@@ -68,22 +79,23 @@ export function acceptTestProviderAuthorization(
 
     const config = getWarehouseCheckout();
 
-    lineItemBlock = undefined;
+    cartLimitBlock = undefined;
 
-    if (config && ineligibility?.code === 'MAX_LINE_ITEMS_EXCEEDED') {
-        const limit = ineligibility.maxLineItems;
+    if (
+        config &&
+        (ineligibility?.code === 'MAX_LINE_ITEMS_EXCEEDED' ||
+            ineligibility?.code === 'MAX_QUANTITY_EXCEEDED')
+    ) {
+        const limit =
+            ineligibility.code === 'MAX_QUANTITY_EXCEEDED'
+                ? ineligibility.maxQuantity
+                : ineligibility.maxLineItems;
 
         if (value || typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1)
-            throw new Error('Invalid Test payment provider line-item limit.');
+            throw new Error('Invalid Test payment provider cart limit.');
 
         if (testProviderOptedIn()) {
-            lineItemBlock = {
-                config,
-                message:
-                    limit === 1
-                        ? 'Checkout allows one line item per order. Return to your cart and keep only one product or variant to continue.'
-                        : `Checkout allows up to ${limit} line items per order. Return to your cart and reduce the number of line items to continue.`,
-            };
+            cartLimitBlock = { config, message: describeCartLimit(ineligibility) };
         }
     }
 
