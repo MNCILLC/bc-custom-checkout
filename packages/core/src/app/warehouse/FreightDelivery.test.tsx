@@ -57,11 +57,11 @@ it('applies selected services and marks changed options unready', async () => {
     fireEvent.click(choice);
     expect(invalidateFreight).toHaveBeenCalled();
     expect(unready).toHaveBeenCalled();
-    fireEvent.click(screen.getByText('Apply delivery options & refresh rates'));
+    fireEvent.click(screen.getByText('Get rates'));
     await waitFor(() => expect(apply).toHaveBeenCalledWith(['HYD']));
     (freightApproved as jest.Mock).mockReturnValue(true);
     rerender(<FreightDelivery {...props} ready />);
-    expect(screen.getByRole('status')).toHaveTextContent('Delivery options saved');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 it('offers a usable retry after load failure', async () => {
     (loadFreightPreferences as jest.Mock).mockRejectedValueOnce(new Error('unavailable'));
@@ -76,7 +76,7 @@ it('offers a usable retry after load failure', async () => {
         />,
     );
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load');
-    fireEvent.click(screen.getByText('Reload preferences'));
+    fireEvent.click(screen.getByText('Reset shipping'));
     expect(await screen.findByRole('checkbox')).toBeEnabled();
 });
 it('handles a rejected apply without enabling continuation', async () => {
@@ -93,7 +93,7 @@ it('handles a rejected apply without enabling continuation', async () => {
         />,
     );
     await screen.findByRole('checkbox');
-    fireEvent.click(screen.getByText('Apply delivery options & refresh rates'));
+    fireEvent.click(screen.getByText('Get rates'));
     expect(await screen.findByRole('alert')).toHaveTextContent('not confirmed');
     expect(ready).not.toHaveBeenCalled();
 });
@@ -111,7 +111,7 @@ it('pickup hides delivery services and clears selected codes', async () => {
     );
     await waitFor(() => expect(screen.getByText('Confirm pickup preferences')).toBeEnabled());
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
-    expect(screen.queryByText('Reload preferences')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reset shipping')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Confirm pickup preferences'));
     await waitFor(() => expect(apply).toHaveBeenCalledWith([]));
 });
@@ -131,7 +131,7 @@ it('allows a failed pickup preferences read to be retried without a shipping add
     await waitFor(() =>
         expect(screen.getByRole('button', { name: 'Confirm pickup preferences' })).toBeEnabled(),
     );
-    expect(screen.queryByRole('button', { name: 'Reload preferences' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reset shipping' })).not.toBeInTheDocument();
 });
 
 it('shows pickup confirmation when approval arrives after the replacement panel has loaded', async () => {

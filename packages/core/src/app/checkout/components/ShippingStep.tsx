@@ -71,7 +71,11 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
     }));
 
     const isPickup = isWarehousePickup(consignments);
-    const [transition, setTransition] = useState<'fulfillment' | 'preferences'>();
+    const [transition, setTransition] = useState<{
+        kind: 'fulfillment' | 'preferences';
+        cartId: string;
+        shippingAddress?: Consignment['shippingAddress'];
+    }>();
     const switching = transition !== undefined;
     const [switchError, setSwitchError] = useState('');
     const [freightReady, setFreightReady] = useState(!freightEndpoint());
@@ -79,16 +83,19 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
     const [freightActionsTarget, setFreightActionsTarget] = useState<HTMLDivElement | null>(null);
     const reviewedCart = useRef<string>();
     const warehouse = getWarehouseCheckout()?.warehouse;
+    const addressDuringFreightRefresh =
+        transition && transition.cartId === checkout?.id ? transition.shippingAddress : undefined;
     const warehouseShipping = useMemo(
         () =>
             warehouse?.allowShipping
                 ? {
                       freightReady: freightReady && !switching,
+                      addressDuringFreightRefresh,
                       setAddressBusy,
                       setFreightActionsTarget,
                   }
                 : undefined,
-        [warehouse?.allowShipping, freightReady, switching],
+        [warehouse?.allowShipping, freightReady, switching, addressDuringFreightRefresh],
     );
     const shippingFormRef = useCallback(
         (node: HTMLDivElement | null) => {
@@ -137,7 +144,17 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
             return false;
         }
 
-        setTransition(isPickup !== pickup ? 'fulfillment' : 'preferences');
+        const shipping = consignments.find((consignment) => !consignment.selectedPickupOption);
+
+        // The SDK briefly drops the address between deleting and recreating the consignment.
+        setTransition({
+            kind: isPickup !== pickup ? 'fulfillment' : 'preferences',
+            cartId: checkout.id,
+            shippingAddress:
+                !pickup && !isPickup && consignments.length === 1
+                    ? shipping?.shippingAddress
+                    : undefined,
+        });
         setFreightReady(!freightEndpoint());
         setSwitchError('');
         setShippingQuoteStatus('loading');
@@ -149,7 +166,6 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
             await saveFreightPreferences(pickup, codes);
 
             const cacheKey = `warehouse-preview-address:${checkout.id}`;
-            const shipping = consignments.find((consignment) => !consignment.selectedPickupOption);
 
             if (shipping) {
                 sessionStorage.setItem(cacheKey, JSON.stringify(shipping.shippingAddress));
@@ -376,7 +392,7 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
         >
             {fulfillmentChoice}
             {freightEditor}
-            {warehouseShipping && transition !== 'fulfillment' ? (
+            {warehouseShipping && transition?.kind !== 'fulfillment' ? (
                 <WarehouseShippingContext.Provider value={warehouseShipping}>
                     <div className="warehouseShipping-address" ref={shippingFormRef}>
                         {shippingForm}

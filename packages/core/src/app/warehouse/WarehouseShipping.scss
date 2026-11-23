@@ -141,6 +141,41 @@
     }
 }
 
+.warehouseDelivery-getRates > span {
+    text-transform: none;
+}
+
+.warehouseDelivery-getRates[aria-busy="true"] {
+    position: relative;
+
+    span {
+        opacity: 0;
+    }
+
+    &::after {
+        animation: warehouseRateSpin 750ms linear infinite;
+        border: 2px solid currentColor;
+        border-radius: 50%;
+        border-top-color: transparent;
+        content: "";
+        height: 1em;
+        inset: 0;
+        margin: auto;
+        position: absolute;
+        width: 1em;
+
+        @media (prefers-reduced-motion: reduce) {
+            animation: none;
+        }
+    }
+}
+
+@keyframes warehouseRateSpin {
+    to {
+        transform: rotate(1turn);
+    }
+}
+
 .warehouseDelivery-reload {
     background: transparent;
     border: 0;

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { Tooltip, TooltipTrigger } from '@bigcommerce/checkout/ui';
+import { Button, ButtonVariant, Tooltip, TooltipTrigger } from '@bigcommerce/checkout/ui';
 
 import {
     freightApproved,
@@ -58,7 +58,7 @@ export default function FreightDelivery({
             setError(
                 pickup
                     ? 'Unable to load pickup preferences. Please retry.'
-                    : 'Unable to load delivery preferences. Reload preferences after choosing a shipping address.',
+                    : 'Unable to load delivery preferences. Choose a shipping address, then select Reset shipping.',
             );
         } finally {
             setLoading(false);
@@ -72,8 +72,13 @@ export default function FreightDelivery({
 
     const actions = (
         <div className="warehouseDelivery-actions">
-            <button
-                className="button optimizedCheckout-buttonSecondary"
+            <Button
+                aria-busy={pickup ? undefined : loading}
+                className={
+                    pickup
+                        ? 'optimizedCheckout-buttonSecondary'
+                        : 'body-bold warehouseDelivery-getRates'
+                }
                 disabled={!data || loading || busy}
                 onClick={async () => {
                     setLoading(true);
@@ -97,13 +102,18 @@ export default function FreightDelivery({
                     }
                 }}
                 type="button"
+                variant={pickup ? undefined : ButtonVariant.Primary}
             >
-                {loading
-                    ? 'Checking delivery preferences…'
-                    : pickup
-                      ? 'Confirm pickup preferences'
-                      : 'Apply delivery options & refresh rates'}
-            </button>
+                {pickup ? (
+                    loading ? (
+                        'Checking delivery preferences…'
+                    ) : (
+                        'Confirm pickup preferences'
+                    )
+                ) : (
+                    <span>Get rates</span>
+                )}
+            </Button>
             {(!pickup || error) && (
                 <button
                     className="warehouseDelivery-reload"
@@ -113,7 +123,7 @@ export default function FreightDelivery({
                     }}
                     type="button"
                 >
-                    {pickup ? 'Retry pickup preferences' : 'Reload preferences'}
+                    {pickup ? 'Retry pickup preferences' : 'Reset shipping'}
                 </button>
             )}
         </div>
@@ -187,12 +197,8 @@ export default function FreightDelivery({
                     </div>
                 )}
                 {error && <p role="alert">{error}</p>}
-                {ready && freightApproved(pickup) && (
-                    <p role="status">
-                        {pickup
-                            ? 'Pickup confirmed. Shipping charges cleared.'
-                            : 'Delivery options saved. Choose a shipping rate below.'}
-                    </p>
+                {pickup && ready && freightApproved(pickup) && (
+                    <p role="status">Pickup confirmed. Shipping charges cleared.</p>
                 )}
                 {pickup
                     ? actions

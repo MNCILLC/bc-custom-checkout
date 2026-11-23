@@ -313,9 +313,10 @@ const SingleShippingForm: React.FC<
 
     // Compare the editable fields with the destination accepted by checkout. A previous
     // consignment can remain in the SDK while a new address is incomplete or still saving.
-    const destination = consignments.find(
-        (consignment) => !consignment.selectedPickupOption,
-    )?.shippingAddress;
+    const addressDuringFreightRefresh = warehouseShipping?.addressDuringFreightRefresh;
+    const destination =
+        addressDuringFreightRefresh ??
+        consignments.find((consignment) => !consignment.selectedPickupOption)?.shippingAddress;
     const showFreightActions =
         warehouseShipping?.setFreightActionsTarget &&
         !addressBusy &&
@@ -348,7 +349,7 @@ const SingleShippingForm: React.FC<
                     onFieldChange={handleFieldChange}
                     onUnhandledError={onUnhandledError}
                     onUseNewAddress={handleUseNewAddress}
-                    shippingAddress={shippingAddress}
+                    shippingAddress={addressDuringFreightRefresh ?? shippingAddress}
                 />
                 {showFreightActions && <div ref={warehouseShipping.setFreightActionsTarget} />}
                 {shouldShowBillingSameAsShipping && (

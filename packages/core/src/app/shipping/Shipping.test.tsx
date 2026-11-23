@@ -6,6 +6,7 @@ import {
 } from '@bigcommerce/checkout-sdk';
 import userEvent from '@testing-library/user-event';
 import { noop } from 'lodash';
+import { http, HttpResponse } from 'msw';
 import React, { type FunctionComponent } from 'react';
 
 import { ExtensionService } from '@bigcommerce/checkout/checkout-extension';
@@ -53,6 +54,7 @@ import {
 } from '../embeddedCheckout';
 import * as warehouseConfig from '../warehouse/config';
 import * as freight from '../warehouse/freight';
+import * as validation from '../warehouse/validation';
 import { WarehouseShippingContext } from '../warehouse/WarehouseShippingContext';
 
 describe('Shipping step', () => {
@@ -127,9 +129,7 @@ describe('Shipping step', () => {
     });
 
     describe('Shipping step happy paths', () => {
-        it('places Apply and Reload under the selected warehouse shipping address', async () => {
-            checkoutService = checkout.use(CheckoutPreset.CheckoutWithMultiShippingCart);
-
+        function mockWarehouseShippingPreferences() {
             const cartId = checkoutWithMultiShippingCart.id;
             const handoff = jest.spyOn(warehouseConfig, 'getWarehouseCheckout').mockReturnValue({
                 version: 1,
@@ -161,16 +161,29 @@ describe('Shipping step', () => {
                 services: [],
             });
 
+            return {
+                load,
+                restore() {
+                    load.mockRestore();
+                    endpoint.mockRestore();
+                    handoff.mockRestore();
+                },
+            };
+        }
+
+        it('places Get rates and Reset shipping under the selected warehouse shipping address', async () => {
+            checkoutService = checkout.use(CheckoutPreset.CheckoutWithMultiShippingCart);
+
+            const { load, restore } = mockWarehouseShippingPreferences();
+
             try {
                 render(<CheckoutTest {...defaultProps} />);
 
                 const picker = await screen.findByTestId('address-select-button');
 
+                expect(screen.queryByRole('button', { name: 'Get rates' })).not.toBeInTheDocument();
                 expect(
-                    screen.queryByRole('button', { name: /Apply delivery options/ }),
-                ).not.toBeInTheDocument();
-                expect(
-                    screen.queryByRole('button', { name: 'Reload preferences' }),
+                    screen.queryByRole('button', { name: 'Reset shipping' }),
                 ).not.toBeInTheDocument();
                 checkout.updateCheckout(
                     'post',
@@ -189,8 +202,8 @@ describe('Shipping step', () => {
                 await userEvent.click(picker);
                 await userEvent.click(screen.getByText(/111 Testing Rd/));
 
-                const apply = await screen.findByRole('button', { name: /Apply delivery options/ });
-                const reload = screen.getByRole('button', { name: 'Reload preferences' });
+                const apply = await screen.findByRole('button', { name: 'Get rates' });
+                const reload = screen.getByRole('button', { name: 'Reset shipping' });
 
                 expect(picker.compareDocumentPosition(apply)).toBe(
                     Node.DOCUMENT_POSITION_FOLLOWING,
@@ -216,11 +229,146 @@ describe('Shipping step', () => {
                 expect(reload).not.toBeInTheDocument();
                 expect(screen.getByLabelText('First Name')).toBeVisible();
             } finally {
-                load.mockRestore();
-                endpoint.mockRestore();
-                handoff.mockRestore();
+                restore();
             }
         });
+
+        it.each(['success', 'failure'])(
+            'keeps the selected address visible during a freight refresh (%s)',
+            async (outcome) => {
+                const selected = customer.addresses[0];
+                const withAddress = {
+                    ...checkoutWithMultiShippingCart,
+                    consignments: [
+                        {
+                            ...consignment,
+                            lineItemIds:
+                                checkoutWithMultiShippingCart.cart.lineItems.physicalItems.map(
+                                    (item) => String(item.id),
+                                ),
+                            shippingAddress: selected,
+                            selectedShippingOption: undefined,
+                        },
+                    ],
+                };
+
+                checkoutService = checkout.use(CheckoutPreset.CheckoutWithMultiShippingCart, {
+                    checkout: withAddress,
+                });
+
+                const { restore } = mockWarehouseShippingPreferences();
+                const validate = jest
+                    .spyOn(validation, 'validateCurrentWarehouse')
+                    .mockResolvedValue();
+                const save = jest.spyOn(freight, 'saveFreightPreferences').mockResolvedValue();
+                const approve = jest
+                    .spyOn(freight, 'approveFreightPreferences')
+                    .mockResolvedValue();
+                const url = `/checkouts/${withAddress.id}`;
+                const replacing = jest.fn();
+                let release!: () => void;
+                const hold = new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+                const refreshed = {
+                    ...withAddress,
+                    consignments: [
+                        {
+                            ...withAddress.consignments[0],
+                            id: 'replacement',
+                            selectedShippingOption: consignment.availableShippingOptions?.find(
+                                (option) => option.type === 'shipping_flatrate',
+                            ),
+                        },
+                    ],
+                };
+
+                checkout.updateCheckout(
+                    'delete',
+                    `${url}/consignments/${consignment.id}`,
+                    checkoutWithMultiShippingCart,
+                );
+                checkout.updateCheckout(
+                    'get',
+                    url,
+                    outcome === 'success' ? refreshed : checkoutWithMultiShippingCart,
+                );
+                checkout.updateCheckout('put', `${url}/consignments/replacement`, refreshed);
+                checkout.setRequestHandler(
+                    http.post(`/api/storefront${url}/consignments`, async () => {
+                        replacing();
+                        await hold;
+
+                        return outcome === 'success'
+                            ? HttpResponse.json(refreshed)
+                            : HttpResponse.json({ title: 'Replacement failed' }, { status: 422 });
+                    }),
+                );
+
+                try {
+                    render(<CheckoutTest {...defaultProps} />);
+
+                    const picker = await screen.findByTestId('address-select-button');
+
+                    expect(picker).toHaveTextContent(selected.address1);
+                    await userEvent.click(await screen.findByRole('button', { name: 'Get rates' }));
+                    await waitFor(() => expect(replacing).toHaveBeenCalledTimes(1));
+                    expect(checkoutService.getState().data.getConsignments()).toHaveLength(0);
+
+                    const pendingRates = screen.getByRole('button', { name: 'Get rates' });
+
+                    expect(pendingRates).toBeDisabled();
+                    expect(pendingRates).toHaveAttribute('aria-busy', 'true');
+                    expect(pendingRates).toHaveClass(
+                        'button--primary',
+                        'optimizedCheckout-buttonPrimary',
+                    );
+                    expect(screen.getByTestId('address-select-button')).toHaveTextContent(
+                        selected.address1,
+                    );
+                    expect(screen.queryByLabelText('First Name')).not.toBeInTheDocument();
+                    release();
+
+                    if (outcome === 'success') {
+                        await waitFor(() => expect(approve).toHaveBeenCalledTimes(1));
+                        await waitFor(() =>
+                            expect(
+                                screen.queryByText('Updating fulfillment…'),
+                            ).not.toBeInTheDocument(),
+                        );
+                        expect(screen.getByTestId('address-select-button')).toHaveTextContent(
+                            selected.address1,
+                        );
+                        expect(screen.queryByLabelText('First Name')).not.toBeInTheDocument();
+
+                        const rates = screen.getByRole('button', { name: 'Get rates' });
+
+                        expect(rates).toBeEnabled();
+                        expect(rates).toHaveAttribute('aria-busy', 'false');
+                    } else {
+                        await screen.findByText(
+                            'Delivery options were not confirmed. Please retry.',
+                        );
+                        await waitFor(() =>
+                            expect(
+                                screen.queryByText('Updating fulfillment…'),
+                            ).not.toBeInTheDocument(),
+                        );
+                        expect(await screen.findByLabelText('First Name')).toBeVisible();
+                        expect(screen.getByTestId('address-select-button')).not.toHaveTextContent(
+                            selected.address1,
+                        );
+                        expect(approve).not.toHaveBeenCalled();
+                    }
+                } finally {
+                    release();
+                    approve.mockRestore();
+                    save.mockRestore();
+                    validate.mockRestore();
+                    restore();
+                }
+            },
+        );
 
         it('lets a warehouse shopper select a saved address before Freight approval', async () => {
             checkoutService = checkout.use(CheckoutPreset.CheckoutWithMultiShippingCart);
