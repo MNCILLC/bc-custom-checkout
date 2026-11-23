@@ -4,6 +4,7 @@ import {
     type CheckTestClaim,
 } from './checkTest';
 import { getWarehouseCheckout, validateWarehouseCheckout } from './config';
+import { WarehouseInventoryConflict } from './initialization';
 import { RECOVERY_MESSAGE, requireSubmissionReview } from './recovery';
 import { type SubmissionSnapshot } from './submission';
 import { warehouseSubmissionInProgress } from './submissionState';
@@ -122,6 +123,14 @@ export async function validateCurrentWarehouse(
 
         if (response.status === 503 && result.code === 'RECOVERY_UNAVAILABLE')
             throw new RecoveryUnavailableError();
+
+        if (
+            response.status === 409 &&
+            result.code === 'INVENTORY_CONFLICT' &&
+            typeof result.message === 'string' &&
+            result.message
+        )
+            throw new WarehouseInventoryConflict(result.message);
 
         if (!response.ok)
             throw new Error(

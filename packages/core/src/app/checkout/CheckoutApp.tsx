@@ -31,6 +31,7 @@ import Checkout from './Checkout';
 
 export interface CheckoutAppProps {
     checkoutId: string;
+    resolvedStockWarning?: string;
     containerId: string;
     initialState?: CheckoutInitialState;
     publicPath?: string;

@@ -19,6 +19,63 @@ export interface FreightResponse {
 
 let state: FreightResponse | undefined;
 let approved: FreightResponse | undefined;
+let resumedPickup: string | undefined;
+
+function pickupReviewKey(cartId: string, revision: string) {
+    return JSON.stringify(['warehouse-reviewed-pickup', freightEndpoint(), cartId, revision]);
+}
+
+export function rememberPickupReview(consignmentId: string) {
+    if (!approved?.preferences || !freightApproved(true)) return;
+
+    try {
+        sessionStorage.setItem(
+            pickupReviewKey(approved.cartId, approved.revision),
+            JSON.stringify({ consignmentId, version: approved.preferences.version }),
+        );
+    } catch {
+        // The ordinary pickup review remains available when tab storage is unavailable.
+    }
+}
+
+export async function restorePickupReview() {
+    resumedPickup = undefined;
+
+    const config = getWarehouseCheckout();
+
+    if (!config || !freightEndpoint()) return;
+
+    try {
+        const saved = sessionStorage.getItem(
+            pickupReviewKey(config.cartId, config.validation.revision),
+        );
+
+        if (!saved) return;
+
+        const review = JSON.parse(saved) as { consignmentId?: string; version?: number };
+
+        if (typeof review?.consignmentId !== 'string' || !Number.isSafeInteger(review.version))
+            return;
+
+        const fresh = await request();
+
+        if (
+            fresh.preferences?.fulfillmentMethod !== 'pickup' ||
+            fresh.preferences.version !== review.version
+        )
+            return;
+        state = fresh;
+        approved = fresh;
+        resumedPickup = review.consignmentId;
+        setShippingQuoteStatus('ready');
+    } catch {
+        // Missing or changed preferences require the normal delivery review.
+    }
+}
+
+export function hasRestoredPickupReview(consignmentId: string) {
+    return resumedPickup === consignmentId && freightApproved(true);
+}
 
 export function freightEndpoint(): string | undefined {
     return getWarehouseDeployment().stores.find(
@@ -27,6 +84,7 @@ export function freightEndpoint(): string | undefined {
 }
 
 export function invalidateFreight() {
+    resumedPickup = undefined;
     approved = undefined;
     setShippingQuoteStatus('review');
 }

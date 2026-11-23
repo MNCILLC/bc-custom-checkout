@@ -80,6 +80,7 @@ const BUYER_PORTAL_RECEIPT_URL_TEMPLATE = '/#/invoice?receiptId={receiptId}';
 
 export interface CheckoutProps {
     checkoutId: string;
+    resolvedStockWarning?: string;
     containerId: string;
     data?: CheckoutStoreSelector;
     embeddedStylesheet: EmbeddedCheckoutStylesheet;
@@ -136,6 +137,8 @@ type CheckoutPageProps = CheckoutProps &
     ExtensionContextProps;
 
 const Checkout = ({
+    checkoutId,
+    resolvedStockWarning,
     createAccountUrl,
     createEmbeddedMessenger,
     embeddedSupport,
@@ -692,16 +695,28 @@ const Checkout = ({
                     }));
                 }
 
-                const errorFlashMessages = data.getFlashMessages('error') || [];
+                const currentCart = data.getCart();
+                // BigCommerce can replay its page-load stock notice after the item passes
+                // a fresh warehouse check. Other native errors must still reach the shopper.
+                const recoveredItem =
+                    currentCart?.id === checkoutId
+                        ? currentCart.lineItems.physicalItems.find(({ name }) =>
+                              resolvedStockWarning?.startsWith(`${name}: `),
+                          )
+                        : undefined;
+                const resolvedMessage =
+                    recoveredItem &&
+                    `Sorry, we can't complete your checkout. It looks like the following product(s) are no longer available: ${recoveredItem.name}. Please remove these item(s) from your cart to continue with your order.`;
+                const flashError = data
+                    .getFlashMessages('error')
+                    ?.find(({ message }) => message !== resolvedMessage);
 
-                if (errorFlashMessages.length) {
+                if (flashError) {
                     setState((prevState) => ({
                         ...prevState,
                         error: new CustomError({
-                            title:
-                                errorFlashMessages[0].title ||
-                                language.translate('common.error_heading'),
-                            message: errorFlashMessages[0].message,
+                            title: flashError.title || language.translate('common.error_heading'),
+                            message: flashError.message,
                             data: {},
                             name: 'default',
                         }),

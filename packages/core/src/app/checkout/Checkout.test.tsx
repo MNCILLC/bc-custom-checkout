@@ -214,6 +214,62 @@ describe('Checkout', () => {
             expect(screen.getByRole('dialog', { name: 'flash message' })).toBeInTheDocument();
         });
 
+        describe('native stock notice after warehouse revalidation', () => {
+            const stockMessage =
+                "Sorry, we can't complete your checkout. It looks like the following product(s) are no longer available: Item X. Please remove these item(s) from your cart to continue with your order.";
+
+            it.each([
+                ['same item and cart', 'Item X', checkoutWithShipping.id, undefined, undefined],
+                [
+                    'another native error',
+                    'Item X',
+                    checkoutWithShipping.id,
+                    'Address error',
+                    'Address error',
+                ],
+                ['different item', 'Other item', checkoutWithShipping.id, undefined, stockMessage],
+                ['different cart', 'Item X', 'another-cart', undefined, stockMessage],
+                ['ordinary checkout', undefined, checkoutWithShipping.id, undefined, stockMessage],
+            ])(
+                'preserves the right native errors for %s',
+                async (_case, resolvedStockWarning, id, extra, expected) => {
+                    checkoutService = checkout.use(CheckoutPreset.ErrorFlashMessage, {
+                        config: {
+                            ...checkoutSettings,
+                            context: {
+                                ...checkoutSettings.context,
+                                flashMessages: [stockMessage, ...(extra ? [extra] : [])].map(
+                                    (message) => ({
+                                        type: 'error',
+                                        title: '',
+                                        message,
+                                    }),
+                                ),
+                            },
+                        },
+                    });
+
+                    render(
+                        <CheckoutTest
+                            {...defaultProps}
+                            checkoutId={id || ''}
+                            resolvedStockWarning={
+                                resolvedStockWarning &&
+                                `${resolvedStockWarning}: 0 available at North; 1 requested.`
+                            }
+                        />,
+                    );
+                    await checkout.waitForCustomerStep();
+
+                    if (expected) {
+                        expect(screen.getByRole('dialog', { name: expected })).toBeInTheDocument();
+                    } else {
+                        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+                    }
+                },
+            );
+        });
+
         it('renders modal error when theres an custom error flash message', async () => {
             checkoutService = checkout.use(CheckoutPreset.CustomErrorFlashMessage);
 

@@ -13,6 +13,8 @@ import { getWarehouseCheckout } from '../../warehouse/config';
 import {
     approveFreightPreferences,
     freightEndpoint,
+    hasRestoredPickupReview,
+    rememberPickupReview,
     saveFreightPreferences,
 } from '../../warehouse/freight';
 import FreightDelivery from '../../warehouse/FreightDelivery';
@@ -72,6 +74,13 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
     const reviewedCart = useRef<string>();
     const warehouse = getWarehouseCheckout()?.warehouse;
 
+    const matchingPickup =
+        isPickup &&
+        (!warehouse ||
+            consignments[0].selectedPickupOption?.pickupMethodId === warehouse.pickupMethodId);
+
+    const resumePickup = matchingPickup && hasRestoredPickupReview(consignments[0].id);
+
     // Native pickup may already be prepared by the authenticated storefront handoff.
     // Open delivery once so the shopper reviews preferences before payment.
     useEffect(() => {
@@ -84,14 +93,9 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
             reviewedCart.current !== checkout.id
         ) {
             reviewedCart.current = checkout.id;
-            onEdit(step.type);
+            if (!resumePickup) onEdit(step.type);
         }
-    }, [checkout, onEdit, step.isComplete, step.isEditable, step.type, warehouse]);
-
-    const matchingPickup =
-        isPickup &&
-        (!warehouse ||
-            consignments[0].selectedPickupOption?.pickupMethodId === warehouse.pickupMethodId);
+    }, [checkout, onEdit, resumePickup, step.isComplete, step.isEditable, step.type, warehouse]);
 
     const changeFulfillment = async (
         pickup: boolean,
@@ -298,7 +302,10 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
                     className="button button--primary optimizedCheckout-buttonPrimary"
                     data-test="warehouse-pickup-continue"
                     disabled={switching || !freightReady}
-                    onClick={() => navigateNextStep(false)}
+                    onClick={() => {
+                        rememberPickupReview(consignments[0].id);
+                        navigateNextStep(false);
+                    }}
                     type="button"
                 >
                     Continue to payment

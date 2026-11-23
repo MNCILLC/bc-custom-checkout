@@ -4,10 +4,12 @@ import { render, unmountComponentAtNode } from 'react-dom';
 import { configurePublicPath } from '../common/bundler';
 import { getWarehouseCheckout, validateWarehouseCheckout } from '../warehouse/config';
 import { getWarehouseDeployment } from '../warehouse/deployment';
+import { restorePickupReview } from '../warehouse/freight';
 import {
     cancelWarehouseInitialization,
     initializeWarehouseCheckout,
     warehouseInitializationEndpoint,
+    WarehouseInventoryConflict,
 } from '../warehouse/initialization';
 import { showLocalCheckoutNotice } from '../warehouse/local-navigation';
 import { installPurchaseGuards } from '../warehouse/purchaseGuards';
@@ -17,7 +19,7 @@ import { RecoveryUnavailableError, validateCurrentWarehouse } from '../warehouse
 import { type CheckoutAppProps } from './CheckoutApp';
 import { initWhyDidYouRender } from './wdyr';
 
-export type RenderCheckoutOptions = CheckoutAppProps;
+export type RenderCheckoutOptions = Omit<CheckoutAppProps, 'resolvedStockWarning'>;
 export type RenderCheckout = typeof renderCheckout;
 
 const initializations = new WeakMap<Element, symbol>();
@@ -57,7 +59,7 @@ export default function renderCheckout({
         const notice = document.createElement('div');
 
         const failureMessage =
-            error instanceof RecoveryUnavailableError
+            error instanceof RecoveryUnavailableError || error instanceof WarehouseInventoryConflict
                 ? error.message
                 : 'Warehouse checkout is unavailable. Return to your cart and try again.';
 
@@ -74,17 +76,31 @@ export default function renderCheckout({
             const retry = document.createElement('button');
 
             retry.type = 'button';
-            retry.textContent = 'Retry warehouse authorization';
+
+            const stockConflict = error instanceof WarehouseInventoryConflict;
+
+            retry.textContent = stockConflict
+                ? 'Retry verification'
+                : 'Retry warehouse authorization';
 
             retry.onclick = () => {
+                if (!current()) return;
                 delete window.warehouseCheckout;
+
+                if (stockConflict) {
+                    // Open the authenticated storefront popup inside this user gesture.
+                    initialize(true, error.message);
+
+                    return;
+                }
+
                 renderCheckout({ containerId, publicPath, ...props });
             };
 
             container.appendChild(retry);
         }
     };
-    const mount = () => {
+    const mount = (freshCheckout = false, resolvedStockWarning?: string) => {
         if (!current()) return;
 
         // A persisted hint or a recovery event during validation must not mount payment UI.
@@ -104,26 +120,38 @@ export default function renderCheckout({
         const { default: CheckoutApp } = require('./CheckoutApp');
 
         render(
-            <CheckoutApp containerId={containerId} publicPath={configuredPublicPath} {...props} />,
+            <CheckoutApp
+                containerId={containerId}
+                publicPath={configuredPublicPath}
+                {...props}
+                initialState={freshCheckout ? undefined : props.initialState}
+                resolvedStockWarning={resolvedStockWarning}
+            />,
             container,
         );
+    };
+
+    const initialize = (fromRetryClick: boolean, resolvedStockWarning?: string) => {
+        message(false);
+        // Initialization uses the storefront session; server validation must
+        // succeed before importing SDK checkout or payment recovery code.
+        void initializeWarehouseCheckout(container, props.checkoutId, current, fromRetryClick)
+            .then(async () => {
+                if (!current()) throw new Error('Authorization was superseded.');
+                if (recoveryRequired()) throw new Error(RECOVERY_MESSAGE);
+                await validateCurrentWarehouse();
+                if (current() && fromRetryClick) await restorePickupReview();
+            })
+            // Initial HTML can contain a stock error recorded before the successful retry.
+            .then(() => mount(fromRetryClick, resolvedStockWarning))
+            .catch((error: unknown) => message(true, error));
     };
 
     try {
         showLocalCheckoutNotice(container);
 
         if (getWarehouseDeployment().mode !== 'off') {
-            message(false);
-            // Initialization uses the storefront session; server validation must
-            // succeed before importing SDK checkout or payment recovery code.
-            void initializeWarehouseCheckout(container, props.checkoutId, current)
-                .then(async () => {
-                    if (!current()) throw new Error('Authorization was superseded.');
-                    if (recoveryRequired()) throw new Error(RECOVERY_MESSAGE);
-                    await validateCurrentWarehouse();
-                })
-                .then(mount)
-                .catch((error: unknown) => message(true, error));
+            initialize(false);
         } else {
             mount();
         }

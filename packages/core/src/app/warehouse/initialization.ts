@@ -1,6 +1,8 @@
 import { validateWarehouseCheckout, type WarehouseCheckoutConfig } from './config';
 import { getWarehouseDeployment } from './deployment';
 
+export class WarehouseInventoryConflict extends Error {}
+
 let cancelPending: (() => void) | undefined;
 
 export function cancelWarehouseInitialization(): void {
@@ -58,6 +60,8 @@ export function requestWarehouseInitialization(cartId: string): Promise<Warehous
             if (!popup || event.source !== popup || event.origin !== url.origin) return;
 
             const data = event.data as {
+                error?: string;
+                message?: unknown;
                 protocol?: string;
                 requestId?: string;
                 cartId?: string;
@@ -71,8 +75,21 @@ export function requestWarehouseInitialization(cartId: string): Promise<Warehous
             )
                 return;
 
+            if (
+                data.cartId === cartId &&
+                data.error === 'INVENTORY_CONFLICT' &&
+                !data.warehouseCheckout &&
+                typeof data.message === 'string' &&
+                data.message.trim()
+            ) {
+                cleanup();
+                reject(new WarehouseInventoryConflict(data.message));
+
+                return;
+            }
+
             try {
-                if (data.cartId !== cartId || !data.warehouseCheckout)
+                if (data.error || data.cartId !== cartId || !data.warehouseCheckout)
                     throw new Error('Invalid response');
                 validateWarehouseCheckout(data.warehouseCheckout, cartId);
                 cleanup();
@@ -108,6 +125,7 @@ export function initializeWarehouseCheckout(
     container: Element,
     cartId: string,
     isCurrent: () => boolean,
+    fromRetryClick = false,
 ): Promise<void> {
     if (window.warehouseCheckout !== undefined) {
         validateWarehouseCheckout(window.warehouseCheckout, cartId);
@@ -117,6 +135,15 @@ export function initializeWarehouseCheckout(
 
     if (!warehouseInitializationEndpoint())
         throw new Error('Warehouse authorization is unavailable.');
+
+    const authorize = async () => {
+        const config = await requestWarehouseInitialization(cartId);
+
+        if (!isCurrent()) throw new Error('Authorization was superseded.');
+        window.warehouseCheckout = config;
+    };
+
+    if (fromRetryClick) return authorize();
 
     const button = document.createElement('button');
 
@@ -128,13 +155,7 @@ export function initializeWarehouseCheckout(
         button.onclick = () => {
             if (!isCurrent()) return;
             button.disabled = true;
-            void requestWarehouseInitialization(cartId)
-                .then((config) => {
-                    if (!isCurrent()) throw new Error('Authorization was superseded.');
-                    window.warehouseCheckout = config;
-                    resolve();
-                })
-                .catch(reject);
+            void authorize().then(resolve, reject);
         };
     });
 }

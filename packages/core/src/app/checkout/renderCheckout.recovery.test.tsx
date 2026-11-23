@@ -52,6 +52,10 @@ const recovery = (changes = {}) => ({
 async function authorize() {
     await act(async () => screen.getByRole('button', { name: 'Continue securely' }).click());
 
+    await popupReply({ warehouseCheckout: config });
+}
+
+async function popupReply(payload: object) {
     const url = new URL(open.mock.calls[open.mock.calls.length - 1][0] as string);
 
     await act(async () => {
@@ -63,7 +67,7 @@ async function authorize() {
                     protocol: 'warehouse-initialization-v1',
                     requestId: url.searchParams.get('requestId'),
                     cartId: config.cartId,
-                    warehouseCheckout: config,
+                    ...payload,
                 },
             }),
         );
@@ -279,4 +283,31 @@ it('a delayed recovery response for an old initialization cannot replace a newer
     });
     expect(app()).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it('displays the authenticated shortage after reload and mounts after a single successful retry', async () => {
+    const message = 'Test item: 0 available at North; 1 requested.';
+
+    await act(async () =>
+        renderCheckout({
+            containerId: 'recovery-app',
+            checkoutId: config.cartId,
+            initialState: {},
+        }),
+    );
+    await act(async () => screen.getByRole('button', { name: 'Continue securely' }).click());
+    await popupReply({ error: 'INVENTORY_CONFLICT', message });
+    expect(screen.getByRole('alert')).toHaveTextContent(message);
+    expect(app()).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    await act(async () => screen.getByRole('button', { name: 'Retry verification' }).click());
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText('Continue securely')).not.toBeInTheDocument();
+    await popupReply({ warehouseCheckout: config });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(app()).toHaveBeenCalledTimes(1);
+    expect(app().mock.calls[0][0].initialState).toBeUndefined();
+    expect(app().mock.calls[0][0].resolvedStockWarning).toBe(message);
 });

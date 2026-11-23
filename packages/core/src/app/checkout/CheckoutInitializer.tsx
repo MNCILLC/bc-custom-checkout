@@ -17,6 +17,7 @@ import { useLoadCheckout } from './hooks';
 
 export interface CheckoutInitializerProps {
     checkoutId: string;
+    resolvedStockWarning?: string;
     containerId: string;
     embeddedStylesheet: EmbeddedCheckoutStylesheet;
     embeddedSupport: CheckoutSupport;

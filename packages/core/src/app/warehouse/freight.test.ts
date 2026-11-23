@@ -6,8 +6,11 @@ import {
     approveFreightPreferences,
     assertFreightReady,
     freightApproved,
+    hasRestoredPickupReview,
     invalidateFreight,
     loadFreightPreferences,
+    rememberPickupReview,
+    restorePickupReview,
     saveFreightPreferences,
 } from './freight';
 
@@ -24,6 +27,7 @@ const service = {
 } as unknown as CheckoutService;
 
 beforeEach(() => {
+    sessionStorage.clear();
     invalidateFreight();
     config = {
         cartId: 'synthetic-cart',
@@ -243,4 +247,19 @@ it('remains optional for other stores', async () => {
     await expect(saveFreightPreferences(false, [])).resolves.toBeUndefined();
     await expect(assertFreightReady(service)).resolves.toBeUndefined();
     expect(global.fetch).not.toHaveBeenCalled();
+});
+
+it('restores pickup only for the reviewed consignment and current server preference version', async () => {
+    await ready();
+    await saveFreightPreferences(true);
+    await approveFreightPreferences();
+    rememberPickupReview('consignment-a');
+    invalidateFreight();
+    await restorePickupReview();
+    expect(hasRestoredPickupReview('consignment-a')).toBe(true);
+    expect(hasRestoredPickupReview('consignment-b')).toBe(false);
+    invalidateFreight();
+    preferences = { ...preferences, version: Number(preferences.version) + 1 };
+    await restorePickupReview();
+    expect(hasRestoredPickupReview('consignment-a')).toBe(false);
 });
