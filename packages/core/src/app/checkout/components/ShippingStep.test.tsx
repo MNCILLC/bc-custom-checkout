@@ -1,8 +1,13 @@
-import { waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import React from 'react';
 
 import * as contexts from '@bigcommerce/checkout/contexts';
-import { getCart, getCheckout, getStoreConfig } from '@bigcommerce/checkout/test-mocks';
+import {
+    getCart,
+    getCheckout,
+    getConsignment,
+    getStoreConfig,
+} from '@bigcommerce/checkout/test-mocks';
 import { render } from '@bigcommerce/checkout/test-utils';
 
 import * as warehouseConfig from '../../warehouse/config';
@@ -83,5 +88,57 @@ describe('ShippingStep', () => {
         await waitFor(() => expect(onEdit).toHaveBeenCalledWith(CheckoutStepType.Shipping));
         view.rerender(<ShippingStep {...props} />);
         expect(onEdit).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows Pickup first with its location and displays the shipping price once a quote is selected', () => {
+        jest.spyOn(warehouseConfig, 'getWarehouseCheckout').mockReturnValue({
+            warehouse: {
+                allowShipping: true,
+                pickupMethodId: 3,
+                pickupLabel: 'Pickup from Forney, TX',
+            },
+        } as warehouseConfig.WarehouseCheckoutConfig);
+        mockCheckoutState({ checkout: getCheckout(), config: getStoreConfig() });
+
+        const view = render(<ShippingStep {...defaultProps} />);
+
+        expect(screen.getAllByRole('radio')[0]).toHaveAccessibleName(
+            'Pickup at Warehouse Forney, TX',
+        );
+        expect(screen.getByRole('radio', { name: 'Ship' })).toBeChecked();
+        view.rerender(<ShippingStep {...defaultProps} consignments={[getConsignment()]} />);
+        expect(screen.getByRole('radio', { name: 'Ship $16.80' })).toBeChecked();
+        view.rerender(
+            <ShippingStep
+                {...defaultProps}
+                consignments={[
+                    { ...getConsignment(), selectedPickupOption: { pickupMethodId: 3 } },
+                ]}
+            />,
+        );
+        expect(screen.getByRole('radio', { name: /Pickup at Warehouse/ })).toBeChecked();
+        expect(screen.getByRole('radio', { name: 'Ship' })).not.toBeChecked();
+    });
+
+    it('shows only the selected Pickup option for a pickup-only warehouse', () => {
+        jest.spyOn(warehouseConfig, 'getWarehouseCheckout').mockReturnValue({
+            warehouse: {
+                allowShipping: false,
+                pickupMethodId: 7,
+                pickupLabel: 'Pickup in Powell, WY',
+            },
+        } as warehouseConfig.WarehouseCheckoutConfig);
+        mockCheckoutState({ checkout: getCheckout(), config: getStoreConfig() });
+        render(
+            <ShippingStep
+                {...defaultProps}
+                consignments={[
+                    { ...getConsignment(), selectedPickupOption: { pickupMethodId: 7 } },
+                ]}
+            />,
+        );
+
+        expect(screen.getByRole('radio', { name: 'Pickup at Warehouse Powell, WY' })).toBeChecked();
+        expect(screen.queryByRole('radio', { name: /^Ship\b/ })).not.toBeInTheDocument();
     });
 });

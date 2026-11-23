@@ -33,6 +33,15 @@ it('applies selected services and marks changed options unready', async () => {
 
     const choice = await screen.findByRole('checkbox');
 
+    expect(screen.getByRole('heading', { name: 'Delivery services' })).toBeVisible();
+
+    const help = screen.getByRole('button', { name: 'About Liftgate' });
+
+    fireEvent.focus(help);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Ground delivery');
+    fireEvent.keyDown(help, { key: 'Escape' });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    expect(choice).not.toBeChecked();
     fireEvent.click(choice);
     expect(invalidateFreight).toHaveBeenCalled();
     expect(unready).toHaveBeenCalled();

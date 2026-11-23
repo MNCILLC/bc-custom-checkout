@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
+import { Tooltip, TooltipTrigger } from '@bigcommerce/checkout/ui';
+
 import {
     freightApproved,
     freightEndpoint,
@@ -62,39 +64,72 @@ export default function FreightDelivery({
     if (!enabled) return null;
 
     return (
-        <section className="form-fieldset" data-test="freight-delivery">
-            <h3 className="body-bold">
-                {pickup ? 'Pickup confirmation' : 'Freight delivery options'}
+        <section
+            className={
+                pickup ? 'warehouseDelivery' : 'warehouseDelivery warehouseDelivery--shipping'
+            }
+            data-test="freight-delivery"
+        >
+            <h3 className="warehouseDelivery-title">
+                {pickup ? 'Pickup confirmation' : 'Delivery services'}
             </h3>
             {!pickup && (
-                <p>
-                    Select the delivery services you need, then apply them before requesting
-                    shipping rates.
+                <p className="warehouseDelivery-notice">
+                    <svg
+                        aria-hidden="true"
+                        fill="none"
+                        height="15"
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="1.8"
+                        viewBox="0 0 24 24"
+                        width="15"
+                    >
+                        <path d="M10.3 4a2 2 0 0 1 3.4 0l8 14a2 2 0 0 1-1.7 3H4a2 2 0 0 1-1.7-3zM12 9v4m0 3v.1" />
+                    </svg>
+                    Select services to ensure proper delivery
                 </p>
             )}
-            <fieldset disabled={loading || busy} style={{ border: 0, padding: 0 }}>
-                {!pickup &&
-                    data?.services.map((service) => (
-                        <label key={service.code} style={{ display: 'block', marginBottom: 12 }}>
-                            <input
-                                checked={codes.includes(service.code)}
-                                onChange={(event) => {
-                                    setCodes(
-                                        event.target.checked
-                                            ? [...codes, service.code]
-                                            : codes.filter((code) => code !== service.code),
-                                    );
-                                    invalidateFreight();
-                                    onUnready();
-                                }}
-                                type="checkbox"
-                            />{' '}
-                            {service.label}
-                            <span style={{ display: 'block', fontSize: 13 }}>
-                                {service.description}
-                            </span>
-                        </label>
-                    ))}
+            <fieldset
+                aria-label={pickup ? 'Pickup preferences' : 'Freight preferences'}
+                className="warehouseDelivery-fields"
+                disabled={loading || busy}
+            >
+                {!pickup && (
+                    <div className="warehouseDelivery-services">
+                        {data?.services.map((service) => (
+                            <div className="warehouseDelivery-service" key={service.code}>
+                                <label>
+                                    <input
+                                        checked={codes.includes(service.code)}
+                                        onChange={(event) => {
+                                            setCodes(
+                                                event.target.checked
+                                                    ? [...codes, service.code]
+                                                    : codes.filter((code) => code !== service.code),
+                                            );
+                                            invalidateFreight();
+                                            onUnready();
+                                        }}
+                                        type="checkbox"
+                                    />
+                                    {service.label}
+                                </label>
+                                {service.description && (
+                                    <TooltipTrigger
+                                        ariaLabel={`About ${service.label}`}
+                                        tooltip={<Tooltip>{service.description}</Tooltip>}
+                                    >
+                                        <span aria-hidden="true" className="warehouseDelivery-info">
+                                            i
+                                        </span>
+                                    </TooltipTrigger>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
                 {error && <p role="alert">{error}</p>}
                 {ready && freightApproved(pickup) && (
                     <p role="status">
@@ -103,51 +138,53 @@ export default function FreightDelivery({
                             : 'Delivery options saved. Choose a shipping rate below.'}
                     </p>
                 )}
-                <button
-                    className="button optimizedCheckout-buttonSecondary"
-                    disabled={!data || loading}
-                    onClick={async () => {
-                        setLoading(true);
-                        setError('');
-                        onUnready();
-                        setShippingQuoteStatus('loading');
+                <div className="warehouseDelivery-actions">
+                    <button
+                        className="button optimizedCheckout-buttonSecondary"
+                        disabled={!data || loading}
+                        onClick={async () => {
+                            setLoading(true);
+                            setError('');
+                            onUnready();
+                            setShippingQuoteStatus('loading');
 
-                        try {
-                            const success = await onApply(pickup ? [] : codes);
+                            try {
+                                const success = await onApply(pickup ? [] : codes);
 
-                            setShippingQuoteStatus(success ? 'ready' : 'failed');
-                            if (!success)
+                                setShippingQuoteStatus(success ? 'ready' : 'failed');
+                                if (!success)
+                                    setError(
+                                        'Delivery options were not confirmed. Reload preferences and retry.',
+                                    );
+                            } catch {
+                                invalidateFreight();
+                                setShippingQuoteStatus('failed');
+                                onUnready();
                                 setError(
                                     'Delivery options were not confirmed. Reload preferences and retry.',
                                 );
-                        } catch {
-                            invalidateFreight();
-                            setShippingQuoteStatus('failed');
-                            onUnready();
-                            setError(
-                                'Delivery options were not confirmed. Reload preferences and retry.',
-                            );
-                        } finally {
-                            setLoading(false);
-                        }
-                    }}
-                    type="button"
-                >
-                    {loading
-                        ? 'Checking delivery preferences…'
-                        : pickup
-                          ? 'Confirm pickup preferences'
-                          : 'Apply delivery options & refresh rates'}
-                </button>
-                <button
-                    className="button optimizedCheckout-buttonSecondary"
-                    onClick={() => {
-                        void reload();
-                    }}
-                    type="button"
-                >
-                    Reload preferences
-                </button>
+                            } finally {
+                                setLoading(false);
+                            }
+                        }}
+                        type="button"
+                    >
+                        {loading
+                            ? 'Checking delivery preferences…'
+                            : pickup
+                              ? 'Confirm pickup preferences'
+                              : 'Apply delivery options & refresh rates'}
+                    </button>
+                    <button
+                        className="warehouseDelivery-reload"
+                        onClick={() => {
+                            void reload();
+                        }}
+                        type="button"
+                    >
+                        Reload preferences
+                    </button>
+                </div>
             </fieldset>
         </section>
     );

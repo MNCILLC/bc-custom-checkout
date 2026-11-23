@@ -6,6 +6,7 @@ import { TranslatedString } from '@bigcommerce/checkout/locale';
 import { AddressFormSkeleton, LazyContainer } from '@bigcommerce/checkout/ui';
 
 import { retry } from '../../common/utility';
+import { ShopperCurrency } from '../../currency';
 import { type ShippingProps, ShippingSummary } from '../../shipping';
 import isWarehousePickup from '../../shipping/isWarehousePickup';
 import { shouldShowMultiShippingToggle } from '../../shipping/utils';
@@ -21,6 +22,7 @@ import FreightDelivery from '../../warehouse/FreightDelivery';
 import { setShippingQuoteStatus } from '../../warehouse/shippingQuoteState';
 import { warehouseSubmissionInProgress } from '../../warehouse/submissionState';
 import { beginWarehouseTransition, validateCurrentWarehouse } from '../../warehouse/validation';
+import { WarehouseFulfillmentOptions } from '../../warehouse/WarehouseFulfillmentOptions';
 import CheckoutStep from '../CheckoutStep';
 import type CheckoutStepType from '../CheckoutStepType';
 
@@ -197,42 +199,6 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
         />
     );
 
-    const fulfillmentChoice = warehouse?.allowShipping ? (
-        <fieldset
-            className="form-fieldset"
-            data-test="warehouse-fulfillment-choice"
-            disabled={switching}
-        >
-            <legend className="form-legend">How would you like to receive your order?</legend>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-                <button
-                    aria-pressed={!isPickup}
-                    className="button optimizedCheckout-buttonSecondary"
-                    data-test="warehouse-ship"
-                    onClick={() => {
-                        changeFulfillment(false);
-                    }}
-                    type="button"
-                >
-                    Ship to me
-                </button>
-                <button
-                    aria-pressed={isPickup}
-                    className="button optimizedCheckout-buttonSecondary"
-                    data-test="warehouse-pickup"
-                    onClick={() => {
-                        changeFulfillment(true);
-                    }}
-                    type="button"
-                >
-                    {warehouse.pickupLabel}
-                </button>
-            </div>
-            {switching && <p role="status">Updating fulfillment…</p>}
-            {switchError && <p role="alert">{switchError}</p>}
-        </fieldset>
-    ) : null;
-
     useEffect(() => {
         if (isPickup || (warehouse && !warehouse.allowShipping)) {
             onReady?.();
@@ -243,20 +209,35 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
         return null;
     }
 
+    const shippingHeading = <TranslatedString id="shipping.shipping_heading" />;
+    const heading = warehouse && !warehouse.allowShipping ? warehouse.pickupLabel : shippingHeading;
+    const fulfillmentChoice = warehouse && (
+        <>
+            <WarehouseFulfillmentOptions
+                busy={switching}
+                onChange={changeFulfillment}
+                pickup={isPickup}
+                shippingPrice={
+                    freightReady && consignments.some((item) => item.selectedShippingOption) ? (
+                        <ShopperCurrency amount={checkout.shippingCostTotal} />
+                    ) : undefined
+                }
+                warehouse={warehouse}
+            />
+            {switching && <p role="status">Updating fulfillment…</p>}
+            {switchError && <p role="alert">{switchError}</p>}
+        </>
+    );
+
     if (
         warehouse &&
         ((!warehouse.allowShipping && !matchingPickup) || (isPickup && !matchingPickup))
     ) {
         return (
-            <CheckoutStep
-                {...step}
-                heading={warehouse.pickupLabel}
-                onEdit={onEdit}
-                onExpanded={onExpanded}
-            >
+            <CheckoutStep {...step} heading={heading} onEdit={onEdit} onExpanded={onExpanded}>
+                {fulfillmentChoice}
                 <p>This order will be collected at your selected warehouse.</p>
                 {freightEditor}
-                {switchError && <p role="alert">{switchError}</p>}
                 {!freightEndpoint() && (
                     <button
                         className="button button--primary optimizedCheckout-buttonPrimary"
@@ -290,7 +271,7 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
         return (
             <CheckoutStep
                 {...step}
-                heading={warehouse?.pickupLabel ?? 'Warehouse pickup'}
+                heading={warehouse ? heading : 'Warehouse pickup'}
                 onEdit={onEdit}
                 onExpanded={onExpanded}
                 summary={details}
@@ -333,9 +314,7 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
         <CheckoutStep
             {...step}
             headerAction={headerAction}
-            heading={
-                warehouse ? warehouse.label : <TranslatedString id="shipping.shipping_heading" />
-            }
+            heading={heading}
             key={step.type}
             onEdit={onEdit}
             onExpanded={onExpanded}
