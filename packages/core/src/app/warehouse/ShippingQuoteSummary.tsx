@@ -28,14 +28,14 @@ export default function ShippingQuoteSummary({ children }: PropsWithChildren) {
                 ? 'Shipping unavailable — retry'
                 : status === 'ready'
                   ? 'Choose a shipping rate'
-                  : 'Review delivery options';
+                  : 'Pending...';
 
     return (
         <ShippingQuoteSummaryContext.Provider
             value={{
                 managed,
                 shipping,
-                total: shipping ? 'Pending delivery confirmation' : undefined,
+                total: shipping ? 'Pending...' : undefined,
             }}
         >
             {children}

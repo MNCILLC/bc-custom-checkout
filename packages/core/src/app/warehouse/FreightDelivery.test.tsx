@@ -47,6 +47,15 @@ it('applies selected services and marks changed options unready', async () => {
 
     expect(screen.getByRole('heading', { name: 'Delivery services' })).toBeVisible();
 
+    const guidance = screen.getByRole('button', { name: 'Delivery services guidance' });
+    const guidanceText = 'Select services to ensure proper delivery';
+
+    expect(screen.queryByText(guidanceText)).not.toBeInTheDocument();
+    fireEvent.focus(guidance);
+    expect(screen.getByRole('tooltip')).toHaveTextContent(guidanceText);
+    fireEvent.keyDown(guidance, { key: 'Escape' });
+    expect(screen.queryByText(guidanceText)).not.toBeInTheDocument();
+
     const help = screen.getByRole('button', { name: 'About Liftgate' });
 
     fireEvent.focus(help);
@@ -110,6 +119,9 @@ it('pickup hides delivery services and clears selected codes', async () => {
         />,
     );
     await waitFor(() => expect(screen.getByText('Confirm pickup preferences')).toBeEnabled());
+    expect(
+        screen.queryByRole('button', { name: 'Delivery services guidance' }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(screen.queryByText('Reset shipping')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Confirm pickup preferences'));

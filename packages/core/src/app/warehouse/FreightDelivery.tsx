@@ -136,27 +136,32 @@ export default function FreightDelivery({
             }
             data-test="freight-delivery"
         >
-            <h3 className="warehouseDelivery-title">
-                {pickup ? 'Pickup confirmation' : 'Delivery services'}
-            </h3>
-            {!pickup && (
-                <p className="warehouseDelivery-notice">
-                    <svg
-                        aria-hidden="true"
-                        fill="none"
-                        height="15"
-                        stroke="currentColor"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="1.8"
-                        viewBox="0 0 24 24"
-                        width="15"
+            <div className="warehouseDelivery-heading">
+                <h3 className="warehouseDelivery-title">
+                    {pickup ? 'Pickup confirmation' : 'Delivery services'}
+                </h3>
+                {!pickup && (
+                    <TooltipTrigger
+                        ariaLabel="Delivery services guidance"
+                        tooltip={<Tooltip>Select services to ensure proper delivery</Tooltip>}
                     >
-                        <path d="M10.3 4a2 2 0 0 1 3.4 0l8 14a2 2 0 0 1-1.7 3H4a2 2 0 0 1-1.7-3zM12 9v4m0 3v.1" />
-                    </svg>
-                    Select services to ensure proper delivery
-                </p>
-            )}
+                        <svg
+                            aria-hidden="true"
+                            className="warehouseDelivery-warningIcon"
+                            fill="none"
+                            height="18"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="1.8"
+                            viewBox="0 0 24 24"
+                            width="18"
+                        >
+                            <path d="M10.3 4a2 2 0 0 1 3.4 0l8 14a2 2 0 0 1-1.7 3H4a2 2 0 0 1-1.7-3zM12 9v4m0 3v.1" />
+                        </svg>
+                    </TooltipTrigger>
+                )}
+            </div>
             <fieldset
                 aria-label={pickup ? 'Pickup preferences' : 'Freight preferences'}
                 className="warehouseDelivery-fields"

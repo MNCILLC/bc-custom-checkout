@@ -39,13 +39,11 @@ it('hides old SDK amounts on edits, refresh, and failure, then restores confirme
     );
     expect(screen.getByText(/Confirmed total/)).toBeInTheDocument();
     act(() => setShippingQuoteStatus('review'));
-    expect(screen.getByText(/Review delivery options/)).toBeInTheDocument();
+    expect(screen.getByText('Pending... / Pending...')).toBeInTheDocument();
     act(() => setShippingQuoteStatus('loading'));
     expect(screen.getByText(/Recalculating shipping/)).toBeInTheDocument();
     act(() => setShippingQuoteStatus('failed'));
-    expect(screen.getByText(/Shipping unavailable/)).toHaveTextContent(
-        'Pending delivery confirmation',
-    );
+    expect(screen.getByText(/Shipping unavailable/)).toHaveTextContent('Pending...');
     act(() => setShippingQuoteStatus('ready'));
     expect(screen.getByText(/Confirmed total/)).toBeInTheDocument();
 });

@@ -269,29 +269,25 @@ describe('CartSummaryDrawerV2 Component', () => {
         },
     );
 
-    it.each(['Recalculating shipping…', 'Shipping unavailable — retry'])(
+    it.each(['Pending...', 'Recalculating shipping…', 'Shipping unavailable — retry'])(
         'hides stale mobile prices during %s and restores them on recovery',
         async (shipping) => {
             const { setQuote } = renderComponent();
 
-            setQuote({ managed: true, shipping, total: 'Pending delivery confirmation' });
+            setQuote({ managed: true, shipping, total: 'Pending...' });
             expect(
                 within(getCollapsedBar()).queryByTestId('cart-outstanding-balance'),
             ).not.toBeInTheDocument();
-            expect(within(getCollapsedBar()).getByRole('status')).toHaveTextContent(
-                'Pending delivery confirmation',
-            );
+            expect(within(getCollapsedBar()).getByRole('status')).toHaveTextContent('Pending...');
             await userEvent.click(getCollapsedBar());
             expect(within(getSheet()).getByTestId('cart-shipping')).toHaveTextContent(shipping);
-            expect(within(getSheet()).getByTestId('cart-total')).toHaveTextContent(
-                'Pending delivery confirmation',
-            );
+            expect(within(getSheet()).getByTestId('cart-total')).toHaveTextContent('Pending...');
             setQuote({ managed: true });
             expect(
                 within(getCollapsedBar()).getByTestId('cart-outstanding-balance'),
             ).toHaveTextContent('$212.80');
             expect(within(getSheet()).getByTestId('cart-total')).not.toHaveTextContent(
-                'Pending delivery confirmation',
+                'Pending...',
             );
         },
     );
