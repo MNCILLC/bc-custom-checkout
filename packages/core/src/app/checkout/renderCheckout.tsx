@@ -11,6 +11,7 @@ import {
     warehouseInitializationEndpoint,
     WarehouseInventoryConflict,
 } from '../warehouse/initialization';
+import { LocalCheckoutConnectionError } from '../warehouse/local-catalyst';
 import { showLocalCheckoutNotice } from '../warehouse/local-navigation';
 import { installPurchaseGuards } from '../warehouse/purchaseGuards';
 import { RECOVERY_MESSAGE, submissionNeedsReview } from '../warehouse/recovery';
@@ -59,7 +60,9 @@ export default function renderCheckout({
         const notice = document.createElement('div');
 
         const failureMessage =
-            error instanceof RecoveryUnavailableError || error instanceof WarehouseInventoryConflict
+            error instanceof RecoveryUnavailableError ||
+            error instanceof WarehouseInventoryConflict ||
+            error instanceof LocalCheckoutConnectionError
                 ? error.message
                 : 'Warehouse checkout is unavailable. Return to your cart and try again.';
 

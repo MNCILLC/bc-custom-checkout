@@ -1,5 +1,6 @@
 import { validateWarehouseCheckout, type WarehouseCheckoutConfig } from './config';
 import { getWarehouseDeployment } from './deployment';
+import { fetchLocalCatalyst, LocalCheckoutConnectionError } from './local-catalyst';
 
 export class WarehouseInventoryConflict extends Error {}
 
@@ -128,6 +129,7 @@ let automaticRequest:
 async function exchangeHandoff(
     cartId: string,
     handoffId: string,
+    container: Element,
 ): Promise<WarehouseCheckoutConfig> {
     const deployment = getWarehouseDeployment();
     const store = deployment.stores.find(
@@ -141,6 +143,30 @@ async function exchangeHandoff(
         !/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(handoffId)
     )
         throw new Error('Return to your cart and open Checkout again.');
+
+    const loopback = new URL(store.handoffEndpoint).hostname === 'localhost';
+    const request = loopback ? fetchLocalCatalyst : fetch;
+
+    if (loopback) {
+        const notice = container.querySelector(
+            '[data-test="warehouse-initialization"][role="status"]',
+        );
+
+        if (notice) {
+            notice.textContent =
+                'Connecting to local Catalyst. If your browser asks, allow this site to access apps on this device.';
+        }
+
+        // Resolve device permission before requesting the shopper's short-lived identity.
+        const ready = await request(store.handoffEndpoint, {
+            method: 'OPTIONS',
+            credentials: 'omit',
+            cache: 'no-store',
+            redirect: 'error',
+        });
+
+        if (!ready.ok) throw new LocalCheckoutConnectionError();
+    }
 
     const identityUrl = new URL('/customer/current.jwt', window.location.origin);
 
@@ -158,7 +184,7 @@ async function exchangeHandoff(
 
     if (!token || token.length > 8192) throw new Error('Shopper identity is unavailable.');
 
-    const response = await fetch(store.handoffEndpoint, {
+    const response = await request(store.handoffEndpoint, {
         method: 'POST',
         credentials: 'omit',
         cache: 'no-store',
@@ -203,7 +229,7 @@ export function initializeWarehouseCheckout(
             automaticRequest.cartId !== cartId ||
             automaticRequest.fragment !== fragment
         ) {
-            const result = exchangeHandoff(cartId, params.get('warehouseHandoff') ?? '');
+            const result = exchangeHandoff(cartId, params.get('warehouseHandoff') ?? '', container);
 
             automaticRequest = { cartId, fragment, result };
 

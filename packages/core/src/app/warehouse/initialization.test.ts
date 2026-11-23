@@ -212,6 +212,80 @@ describe('local one-click handoff', () => {
         expect(window.warehouseCheckout).toEqual(config);
         expect(window.location.hash).toBe('');
     });
+    describe('localhost access', () => {
+        const endpoint = 'http://localhost:3000/api/warehouse/initialize';
+        let box: HTMLElement;
+
+        beforeEach(() => {
+            const stores = JSON.parse(process.env.WAREHOUSE_CHECKOUT_STORES ?? '[]');
+
+            stores[0].handoffEndpoint = endpoint;
+            stores[0].validationEndpoint = 'http://localhost:3000/api/warehouse/validate';
+            process.env.WAREHOUSE_CHECKOUT_STORES = JSON.stringify(stores);
+            request.mockReset();
+            box = document.createElement('div');
+            box.innerHTML = '<div role="status" data-test="warehouse-initialization"></div>';
+        });
+
+        it('checks device access before fetching identity and exchanging once', async () => {
+            request.mockResolvedValueOnce(new Response(null, { status: 204 }));
+            request.mockResolvedValueOnce(new Response('synthetic-shopper-proof'));
+            request.mockResolvedValueOnce(
+                Response.json({
+                    ...config,
+                    validation: {
+                        ...config.validation,
+                        endpoint: 'http://localhost:3000/api/warehouse/validate',
+                    },
+                }),
+            );
+
+            await initializeWarehouseCheckout(box, 'cart-a', () => true);
+
+            expect(request.mock.calls[0]).toEqual([
+                endpoint,
+                expect.objectContaining({
+                    method: 'OPTIONS',
+                    credentials: 'omit',
+                }),
+            ]);
+            expect(request.mock.calls[0][1].headers).toBeUndefined();
+            expect(request.mock.calls[0][1].body).toBeUndefined();
+            expect(request.mock.calls[1][0]).toContain('/customer/current.jwt?');
+            expect(request.mock.calls[2][1].method).toBe('POST');
+            expect(request).toHaveBeenCalledTimes(3);
+            expect(open).not.toHaveBeenCalled();
+        });
+
+        it.each(['denied', 'pending'])(
+            'keeps checkout blocked when permission is %s',
+            async (state) => {
+                request.mockImplementationOnce(
+                    (_url, init: RequestInit) =>
+                        new Promise((_resolve, reject) => {
+                            if (state === 'denied') reject(new TypeError('Failed to fetch'));
+                            else
+                                init.signal?.addEventListener('abort', () =>
+                                    reject(new Error('aborted')),
+                                );
+                        }),
+                );
+
+                const result = initializeWarehouseCheckout(box, 'cart-a', () => true);
+                const failed = expect(result).rejects.toThrow(
+                    'allow this site to access apps on this device',
+                );
+
+                expect(box).toHaveTextContent(/If your browser asks/);
+                jest.advanceTimersByTime(30000);
+                await failed;
+                expect(request).toHaveBeenCalledTimes(1);
+                expect(window.warehouseCheckout).toBeUndefined();
+                expect(open).not.toHaveBeenCalled();
+            },
+        );
+    });
+
     it('leaves a stale handoff blocked without opening the popup', async () => {
         request.mockResolvedValueOnce(new Response(null, { status: 409 }));
         await expect(
