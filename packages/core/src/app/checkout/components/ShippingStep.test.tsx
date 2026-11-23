@@ -120,6 +120,31 @@ describe('ShippingStep', () => {
         expect(screen.getByRole('radio', { name: 'Ship' })).not.toBeChecked();
     });
 
+    it('mounts the shipping address form before Freight approval, and removes it for pickup', async () => {
+        jest.spyOn(freight, 'freightEndpoint').mockReturnValue('https://backend.invalid/freight');
+        jest.spyOn(warehouseConfig, 'getWarehouseCheckout').mockReturnValue({
+            warehouse: {
+                allowShipping: true,
+                pickupMethodId: 3,
+                pickupLabel: 'Pickup from Forney, TX',
+            },
+        } as warehouseConfig.WarehouseCheckoutConfig);
+        mockCheckoutState({ checkout: getCheckout(), config: getStoreConfig() });
+
+        const view = render(<ShippingStep {...defaultProps} />);
+
+        expect(await screen.findByTestId('shipping')).toBeVisible();
+        view.rerender(
+            <ShippingStep
+                {...defaultProps}
+                consignments={[
+                    { ...getConsignment(), selectedPickupOption: { pickupMethodId: 3 } },
+                ]}
+            />,
+        );
+        expect(screen.queryByTestId('shipping')).not.toBeInTheDocument();
+    });
+
     it('shows only the selected Pickup option for a pickup-only warehouse', () => {
         jest.spyOn(warehouseConfig, 'getWarehouseCheckout').mockReturnValue({
             warehouse: {

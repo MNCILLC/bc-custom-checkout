@@ -15,8 +15,13 @@ jest.mock('./freight', () => ({
     invalidateFreight: jest.fn(),
     loadFreightPreferences: jest.fn(),
 }));
+
+let afterAddress: HTMLDivElement;
+
 beforeEach(() => {
     jest.clearAllMocks();
+    afterAddress = document.createElement('div');
+    document.body.append(afterAddress);
     (freightEndpoint as jest.Mock).mockReturnValue('https://backend.invalid/freight');
     (freightApproved as jest.Mock).mockReturnValue(false);
     (loadFreightPreferences as jest.Mock).mockResolvedValue({
@@ -24,11 +29,18 @@ beforeEach(() => {
         services: [{ code: 'HYD', label: 'Liftgate', description: 'Ground delivery' }],
     });
 });
+afterEach(() => afterAddress.remove());
 it('applies selected services and marks changed options unready', async () => {
     const apply = jest.fn().mockResolvedValue(true);
     const unready = jest.fn();
 
-    const props = { onApply: apply, onReady: jest.fn(), onUnready: unready, pickup: false };
+    const props = {
+        onApply: apply,
+        onReady: jest.fn(),
+        onUnready: unready,
+        pickup: false,
+        shippingActionsTarget: afterAddress,
+    };
     const { rerender } = render(<FreightDelivery {...props} ready={false} />);
 
     const choice = await screen.findByRole('checkbox');
@@ -60,6 +72,7 @@ it('offers a usable retry after load failure', async () => {
             onUnready={jest.fn()}
             pickup={false}
             ready={false}
+            shippingActionsTarget={afterAddress}
         />,
     );
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load');
@@ -76,6 +89,7 @@ it('handles a rejected apply without enabling continuation', async () => {
             onUnready={jest.fn()}
             pickup={false}
             ready={false}
+            shippingActionsTarget={afterAddress}
         />,
     );
     await screen.findByRole('checkbox');
@@ -97,8 +111,27 @@ it('pickup hides delivery services and clears selected codes', async () => {
     );
     await waitFor(() => expect(screen.getByText('Confirm pickup preferences')).toBeEnabled());
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reload preferences')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Confirm pickup preferences'));
     await waitFor(() => expect(apply).toHaveBeenCalledWith([]));
+});
+
+it('allows a failed pickup preferences read to be retried without a shipping address', async () => {
+    (loadFreightPreferences as jest.Mock).mockRejectedValueOnce(new Error('unavailable'));
+    render(
+        <FreightDelivery
+            onApply={jest.fn()}
+            onReady={jest.fn()}
+            onUnready={jest.fn()}
+            pickup
+            ready={false}
+        />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry pickup preferences' }));
+    await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Confirm pickup preferences' })).toBeEnabled(),
+    );
+    expect(screen.queryByRole('button', { name: 'Reload preferences' })).not.toBeInTheDocument();
 });
 
 it('shows pickup confirmation when approval arrives after the replacement panel has loaded', async () => {

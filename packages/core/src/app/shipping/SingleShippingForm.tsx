@@ -1,7 +1,7 @@
 import { type Address, type FormField } from '@bigcommerce/checkout-sdk';
 import { type FormikProps } from 'formik';
 import { debounce, type DebouncedFunc, isEqual, noop } from 'lodash';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { lazy, object } from 'yup';
 
 import { useCapabilities, useThemeContext } from '@bigcommerce/checkout/contexts';
@@ -25,6 +25,7 @@ import {
     getCustomFormFieldsValidationSchema,
 } from '../formFields';
 import { PaymentMethodId } from '../payment/paymentMethod';
+import { WarehouseShippingContext } from '../warehouse/WarehouseShippingContext';
 
 import BillingSameAsShippingField from './BillingSameAsShippingField';
 import hasSelectedShippingOptions from './hasSelectedShippingOptions';
@@ -103,17 +104,27 @@ const SingleShippingForm: React.FC<
         updateShippingAddress: updateAddress,
     } = useShipping();
 
-    const propsRef = useRef({ values, shippingAddress, isValid });
+    const warehouseShipping = useContext(WarehouseShippingContext);
+    const canQuote = warehouseShipping?.freightReady !== false;
+    const propsRef = useRef({ values, shippingAddress, isValid, canQuote });
     const debouncedUpdateAddressRef = useRef<
         | DebouncedFunc<(address: Address, includeShippingOptions: boolean) => Promise<void>>
         | undefined
     >(undefined);
 
-    propsRef.current = { values, shippingAddress, isValid };
+    propsRef.current = { values, shippingAddress, isValid, canQuote };
 
     const [isResettingAddress, setIsResettingAddress] = useState(false);
     const [isUpdatingShippingData, setIsUpdatingShippingData] = useState(false);
     const [hasRequestedShippingOptions, setHasRequestedShippingOptions] = useState(false);
+    const setAddressBusy = warehouseShipping?.setAddressBusy;
+    const addressBusy = isResettingAddress || isUpdatingShippingData;
+
+    useEffect(() => {
+        setAddressBusy?.(addressBusy);
+
+        return () => setAddressBusy?.(false);
+    }, [addressBusy, setAddressBusy]);
 
     const stateOrProvinceCodeFormField = useMemo(() => {
         return getFields(values.shippingAddress?.countryCode).find(
@@ -124,16 +135,18 @@ const SingleShippingForm: React.FC<
     useEffect(() => {
         debouncedUpdateAddressRef.current = debounce(
             async (address: Address, includeShippingOptions: boolean) => {
+                const requestRates = includeShippingOptions && propsRef.current.canQuote;
+
                 try {
                     await updateAddress(address, {
                         params: {
                             include: {
-                                'consignments.availableShippingOptions': includeShippingOptions,
+                                'consignments.availableShippingOptions': requestRates,
                             },
                         },
                     });
 
-                    if (includeShippingOptions) {
+                    if (requestRates) {
                         setHasRequestedShippingOptions(true);
                     }
                 } catch (error) {
@@ -243,7 +256,13 @@ const SingleShippingForm: React.FC<
         setIsResettingAddress(true);
 
         try {
-            await updateAddress(address);
+            if (canQuote) {
+                await updateAddress(address);
+            } else {
+                await updateAddress(address, {
+                    params: { include: { 'consignments.availableShippingOptions': false } },
+                });
+            }
 
             setValues({
                 ...propsRef.current.values,
@@ -292,6 +311,27 @@ const SingleShippingForm: React.FC<
         !enhancedThemeV1 &&
         !PAYMENT_METHOD_VALID.some((method) => method === methodId);
 
+    // Compare the editable fields with the destination accepted by checkout. A previous
+    // consignment can remain in the SDK while a new address is incomplete or still saving.
+    const destination = consignments.find(
+        (consignment) => !consignment.selectedPickupOption,
+    )?.shippingAddress;
+    const showFreightActions =
+        warehouseShipping?.setFreightActionsTarget &&
+        !addressBusy &&
+        isValid &&
+        destination?.address1 &&
+        values.shippingAddress &&
+        isEqualAddress(
+            mapAddressFromFormValues(values.shippingAddress),
+            mapAddressFromFormValues(
+                mapAddressToFormValues(
+                    getFields(destination.countryCode),
+                    decodeAddressLabel(destination, hasAddressLabel),
+                ),
+            ),
+        );
+
     return (
         <Form autoComplete="on">
             <Fieldset>
@@ -310,6 +350,7 @@ const SingleShippingForm: React.FC<
                     onUseNewAddress={handleUseNewAddress}
                     shippingAddress={shippingAddress}
                 />
+                {showFreightActions && <div ref={warehouseShipping.setFreightActionsTarget} />}
                 {shouldShowBillingSameAsShipping && (
                     <div className="form-body">
                         <BillingSameAsShippingField />
@@ -317,17 +358,19 @@ const SingleShippingForm: React.FC<
                 )}
             </Fieldset>
 
-            <ShippingFormFooter
-                cartHasChanged={cartHasChanged}
-                defaultShippingExpectationMessage={defaultShippingExpectationMessage}
-                isInitialValueLoaded={isInitialValueLoaded}
-                isLoading={isLoading || isUpdatingShippingData}
-                isMultiShippingMode={false}
-                shippingFormRenderTimestamp={shippingFormRenderTimestamp}
-                shouldDisableSubmit={shouldDisableSubmit()}
-                shouldShowOrderComments={shouldShowOrderComments}
-                shouldShowShippingOptions={isValid}
-            />
+            {canQuote && (
+                <ShippingFormFooter
+                    cartHasChanged={cartHasChanged}
+                    defaultShippingExpectationMessage={defaultShippingExpectationMessage}
+                    isInitialValueLoaded={isInitialValueLoaded}
+                    isLoading={isLoading || isUpdatingShippingData}
+                    isMultiShippingMode={false}
+                    shippingFormRenderTimestamp={shippingFormRenderTimestamp}
+                    shouldDisableSubmit={shouldDisableSubmit()}
+                    shouldShowOrderComments={shouldShowOrderComments}
+                    shouldShowShippingOptions={isValid}
+                />
+            )}
         </Form>
     );
 };

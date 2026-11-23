@@ -1,6 +1,6 @@
 import { type CheckoutSelectors, type CustomerAddress } from '@bigcommerce/checkout-sdk';
 import { noop } from 'lodash';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 
 import { useCapabilities } from '@bigcommerce/checkout/contexts';
 import { TranslatedString } from '@bigcommerce/checkout/locale';
@@ -15,6 +15,7 @@ import {
     setDefaultAddress,
 } from '../address';
 import type CheckoutStepStatus from '../checkout/CheckoutStepStatus';
+import { WarehouseShippingContext } from '../warehouse/WarehouseShippingContext';
 
 import { useShipping } from './hooks/useShipping';
 import { type MultiShippingFormValues } from './MultiShippingForm';
@@ -51,6 +52,8 @@ function Shipping({
     step,
 }: ShippingProps) {
     const [isInitializing, setIsInitializing] = useState(true);
+    const warehouseShipping = useContext(WarehouseShippingContext);
+    const freightReady = warehouseShipping?.freightReady;
     const [isMultiShippingUnavailableModalOpen, setIsMultiShippingUnavailableModalOpen] =
         useState(false);
 
@@ -84,7 +87,7 @@ function Shipping({
             try {
                 await Promise.all([
                     loadShippingAddressFields(),
-                    loadShippingOptions(),
+                    freightReady === undefined && loadShippingOptions(),
                     loadBillingAddressFields(),
                 ]);
 
@@ -114,6 +117,12 @@ function Shipping({
 
         void initializeShipping();
     }, []);
+
+    useEffect(() => {
+        if (freightReady && !isInitializing) {
+            void loadShippingOptions().catch(onUnhandledError);
+        }
+    }, [freightReady, isInitializing, loadShippingOptions, onUnhandledError]);
 
     const handleMultiShippingModeSwitch = useCallback(async () => {
         try {
@@ -161,6 +170,8 @@ function Shipping({
     }, []);
 
     const handleSingleShippingSubmit = async (values: SingleShippingFormValues) => {
+        if (freightReady === false) return;
+
         const updatedShippingAddress =
             values.shippingAddress && mapAddressFromFormValues(values.shippingAddress);
         const promises: Array<Promise<CheckoutSelectors>> = [];
@@ -194,6 +205,8 @@ function Shipping({
     };
 
     const handleMultiShippingSubmit = async (values: MultiShippingFormValues) => {
+        if (freightReady === false) return;
+
         try {
             if (customerMessage !== values.orderComment) {
                 await updateCheckout({ customerMessage: values.orderComment });

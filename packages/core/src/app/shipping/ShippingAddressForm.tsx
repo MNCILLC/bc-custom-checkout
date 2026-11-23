@@ -1,7 +1,8 @@
 import { type Address, type Consignment, type FormField } from '@bigcommerce/checkout-sdk';
-import React, { type ReactElement } from 'react';
+import React, { type ReactElement, useContext } from 'react';
 
 import { useCapabilities, useCheckout } from '@bigcommerce/checkout/contexts';
+import { TranslatedString } from '@bigcommerce/checkout/locale';
 import { Fieldset, LoadingOverlay } from '@bigcommerce/checkout/ui';
 
 import {
@@ -12,6 +13,7 @@ import {
     isValidCustomerAddress,
 } from '../address';
 import { connectFormik, type ConnectFormikProps } from '../common/form';
+import { WarehouseShippingContext } from '../warehouse/WarehouseShippingContext';
 
 import { type SingleShippingFormValues } from './SingleShippingForm';
 
@@ -83,6 +85,7 @@ const ShippingAddressForm = ({
     };
 
     const hasAddresses = rawAddresses.length > 0;
+    const warehouseShipping = useContext(WarehouseShippingContext);
     const hasValidCustomerAddress = isValidCustomerAddress(
         decodedShippingAddress,
         addresses,
@@ -92,13 +95,18 @@ const ShippingAddressForm = ({
 
     return (
         <Fieldset id="checkoutShippingAddress">
-            {hasAddresses && (
+            {(hasAddresses || (warehouseShipping && !restrictManualAddressEntry)) && (
                 <Fieldset id="shippingAddresses">
                     <LoadingOverlay isLoading={isLoading}>
                         <AddressSelect
                             addresses={addresses}
                             onSelectAddress={onAddressSelect}
                             onUseNewAddress={onUseNewAddress}
+                            placeholderText={
+                                warehouseShipping && hasAddresses ? (
+                                    <TranslatedString id="address.select_address_action" />
+                                ) : undefined
+                            }
                             selectedAddress={
                                 hasValidCustomerAddress ? decodedShippingAddress : undefined
                             }

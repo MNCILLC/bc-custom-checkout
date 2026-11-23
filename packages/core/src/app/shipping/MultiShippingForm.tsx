@@ -1,4 +1,10 @@
-import React, { type FunctionComponent, type ReactNode, useMemo, useState } from 'react';
+import React, {
+    type FunctionComponent,
+    type ReactNode,
+    useContext,
+    useMemo,
+    useState,
+} from 'react';
 
 import {
     TranslatedString,
@@ -8,6 +14,7 @@ import {
 import { Alert, AlertType, Button, ButtonVariant } from '@bigcommerce/checkout/ui';
 
 import { withFormikExtended } from '../common/form';
+import { WarehouseShippingContext } from '../warehouse/WarehouseShippingContext';
 
 import ConsignmentListItem from './ConsignmentListItem';
 import hasSelectedShippingOptions from './hasSelectedShippingOptions';
@@ -15,10 +22,11 @@ import { useMultiShippingConsignmentItems } from './hooks/useMultishippingConsig
 import { useShipping } from './hooks/useShipping';
 import isSelectedShippingOptionValid from './isSelectedShippingOptionValid';
 import MultiShippingFormFooter from './MultiShippingFormFooter';
-import { ShippingExpectationMessage } from './ShippingExpectationMessage';
 import { type MultiShippingConsignmentData } from './MultishippingType';
-import './MultiShippingForm.scss';
 import NewConsignment from './NewConsignment';
+import { ShippingExpectationMessage } from './ShippingExpectationMessage';
+
+import './MultiShippingForm.scss';
 
 export interface MultiShippingFormValues {
     orderComment: string;
@@ -38,6 +46,7 @@ const MultiShippingForm: FunctionComponent<MultiShippingFormProps> = ({
     cartHasChanged,
 }: MultiShippingFormProps) => {
     const [errorConsignmentNumber, setErrorConsignmentNumber] = useState<number | undefined>();
+    const warehouseShipping = useContext(WarehouseShippingContext);
 
     const {
         consignments,
@@ -136,6 +145,11 @@ const MultiShippingForm: FunctionComponent<MultiShippingFormProps> = ({
                     setIsAddShippingDestination={setIsAddShippingDestination}
                 />
             )}
+            {!isAddShippingDestination &&
+                warehouseShipping?.setFreightActionsTarget &&
+                consignments.some(
+                    (item) => !item.selectedPickupOption && item.shippingAddress.address1,
+                ) && <div ref={warehouseShipping.setFreightActionsTarget} />}
             {hasUnassignedItems && (
                 <Button
                     className="body-regular add-consignment-button"
@@ -155,12 +169,14 @@ const MultiShippingForm: FunctionComponent<MultiShippingFormProps> = ({
                     </span>
                 </div>
             )}
-            <MultiShippingFormFooter
-                cartHasChanged={cartHasChanged}
-                isLoading={isLoading}
-                shouldDisableSubmit={shouldDisableSubmit}
-                shouldShowOrderComments={shouldShowOrderComments}
-            />
+            {warehouseShipping?.freightReady !== false && (
+                <MultiShippingFormFooter
+                    cartHasChanged={cartHasChanged}
+                    isLoading={isLoading}
+                    shouldDisableSubmit={shouldDisableSubmit}
+                    shouldShowOrderComments={shouldShowOrderComments}
+                />
+            )}
         </>
     );
 };

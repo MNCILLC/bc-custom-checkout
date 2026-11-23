@@ -1,5 +1,5 @@
 import type { AddressRequestBody, Cart, Consignment } from '@bigcommerce/checkout-sdk/essential';
-import React, { lazy, useEffect, useRef, useState } from 'react';
+import React, { lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useCheckout, useThemeContext } from '@bigcommerce/checkout/contexts';
 import { TranslatedString } from '@bigcommerce/checkout/locale';
@@ -23,6 +23,7 @@ import { setShippingQuoteStatus } from '../../warehouse/shippingQuoteState';
 import { warehouseSubmissionInProgress } from '../../warehouse/submissionState';
 import { beginWarehouseTransition, validateCurrentWarehouse } from '../../warehouse/validation';
 import { WarehouseFulfillmentOptions } from '../../warehouse/WarehouseFulfillmentOptions';
+import { WarehouseShippingContext } from '../../warehouse/WarehouseShippingContext';
 import CheckoutStep from '../CheckoutStep';
 import type CheckoutStepType from '../CheckoutStepType';
 
@@ -70,11 +71,31 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
     }));
 
     const isPickup = isWarehousePickup(consignments);
-    const [switching, setSwitching] = useState(false);
+    const [transition, setTransition] = useState<'fulfillment' | 'preferences'>();
+    const switching = transition !== undefined;
     const [switchError, setSwitchError] = useState('');
     const [freightReady, setFreightReady] = useState(!freightEndpoint());
+    const [addressBusy, setAddressBusy] = useState(false);
+    const [freightActionsTarget, setFreightActionsTarget] = useState<HTMLDivElement | null>(null);
     const reviewedCart = useRef<string>();
     const warehouse = getWarehouseCheckout()?.warehouse;
+    const warehouseShipping = useMemo(
+        () =>
+            warehouse?.allowShipping
+                ? {
+                      freightReady: freightReady && !switching,
+                      setAddressBusy,
+                      setFreightActionsTarget,
+                  }
+                : undefined,
+        [warehouse?.allowShipping, freightReady, switching],
+    );
+    const shippingFormRef = useCallback(
+        (node: HTMLDivElement | null) => {
+            node?.toggleAttribute('inert', switching);
+        },
+        [switching],
+    );
 
     const matchingPickup =
         isPickup &&
@@ -109,13 +130,14 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
             !cart ||
             !checkout ||
             switching ||
+            addressBusy ||
             warehouseSubmissionInProgress() ||
             (!force && ((pickup && matchingPickup) || (!pickup && !isPickup)))
         ) {
             return false;
         }
 
-        setSwitching(true);
+        setTransition(isPickup !== pickup ? 'fulfillment' : 'preferences');
         setFreightReady(!freightEndpoint());
         setSwitchError('');
         setShippingQuoteStatus('loading');
@@ -131,9 +153,16 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
 
             if (shipping) {
                 sessionStorage.setItem(cacheKey, JSON.stringify(shipping.shippingAddress));
+            } else if (!isPickup) {
+                sessionStorage.removeItem(cacheKey);
             }
 
-            const savedAddress = sessionStorage.getItem(cacheKey);
+            // Only a switch back from pickup should restore a previous shipping address.
+            // An empty shipping consignment may mean the shopper chose "Enter a new address".
+            const savedAddress = isPickup ? sessionStorage.getItem(cacheKey) : null;
+            const shippingAddress =
+                shipping?.shippingAddress ??
+                (savedAddress ? (JSON.parse(savedAddress) as AddressRequestBody) : undefined);
             const lineItems = cart.lineItems.physicalItems.map((item) => ({
                 itemId: item.id,
                 quantity: item.quantity,
@@ -153,10 +182,10 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
                         lineItems,
                     },
                 ]);
-            } else if (savedAddress) {
+            } else if (shippingAddress) {
                 await checkoutService.createConsignments([
                     {
-                        shippingAddress: JSON.parse(savedAddress) as AddressRequestBody,
+                        shippingAddress,
                         lineItems,
                     },
                 ]);
@@ -182,13 +211,13 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
         } finally {
             endTransition();
             window.dispatchEvent(new Event('focus'));
-            setSwitching(false);
+            setTransition(undefined);
         }
     };
 
     const freightEditor = (
         <FreightDelivery
-            busy={switching}
+            busy={switching || addressBusy}
             onApply={(codes) =>
                 changeFulfillment(isPickup || !warehouse?.allowShipping, true, codes)
             }
@@ -196,6 +225,7 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
             onUnready={() => setFreightReady(false)}
             pickup={isPickup || !warehouse?.allowShipping}
             ready={freightReady}
+            shippingActionsTarget={freightActionsTarget}
         />
     );
 
@@ -214,7 +244,7 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
     const fulfillmentChoice = warehouse && (
         <>
             <WarehouseFulfillmentOptions
-                busy={switching}
+                busy={switching || addressBusy}
                 onChange={changeFulfillment}
                 pickup={isPickup}
                 shippingPrice={
@@ -310,6 +340,24 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
         </span>
     ) : null;
 
+    const shippingForm = (
+        <LazyContainer loadingSkeleton={<AddressFormSkeleton />}>
+            <Shipping
+                cartHasChanged={cartHasChanged}
+                isBillingSameAsShipping={isBillingSameAsShipping}
+                isMultiShippingMode={isMultiShippingMode}
+                navigateNextStep={navigateNextStep}
+                onCreateAccount={onCreateAccount}
+                onReady={onReady}
+                onSignIn={onSignIn}
+                onToggleMultiShipping={onToggleMultiShipping}
+                onUnhandledError={onUnhandledError}
+                setIsMultishippingMode={setIsMultishippingMode}
+                step={step}
+            />
+        </LazyContainer>
+    );
+
     return (
         <CheckoutStep
             {...step}
@@ -328,22 +376,14 @@ const ShippingStep: React.FC<ShippingStepProps> = ({
         >
             {fulfillmentChoice}
             {freightEditor}
-            {!switching && freightReady && (
-                <LazyContainer loadingSkeleton={<AddressFormSkeleton />}>
-                    <Shipping
-                        cartHasChanged={cartHasChanged}
-                        isBillingSameAsShipping={isBillingSameAsShipping}
-                        isMultiShippingMode={isMultiShippingMode}
-                        navigateNextStep={navigateNextStep}
-                        onCreateAccount={onCreateAccount}
-                        onReady={onReady}
-                        onSignIn={onSignIn}
-                        onToggleMultiShipping={onToggleMultiShipping}
-                        onUnhandledError={onUnhandledError}
-                        setIsMultishippingMode={setIsMultishippingMode}
-                        step={step}
-                    />
-                </LazyContainer>
+            {warehouseShipping && transition !== 'fulfillment' ? (
+                <WarehouseShippingContext.Provider value={warehouseShipping}>
+                    <div className="warehouseShipping-address" ref={shippingFormRef}>
+                        {shippingForm}
+                    </div>
+                </WarehouseShippingContext.Provider>
+            ) : (
+                !switching && freightReady && shippingForm
             )}
         </CheckoutStep>
     );

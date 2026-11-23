@@ -51,6 +51,9 @@ import {
     createEmbeddedCheckoutStylesheet,
     createEmbeddedCheckoutSupport,
 } from '../embeddedCheckout';
+import * as warehouseConfig from '../warehouse/config';
+import * as freight from '../warehouse/freight';
+import { WarehouseShippingContext } from '../warehouse/WarehouseShippingContext';
 
 describe('Shipping step', () => {
     let checkout: CheckoutPageNodeObject;
@@ -124,6 +127,215 @@ describe('Shipping step', () => {
     });
 
     describe('Shipping step happy paths', () => {
+        it('places Apply and Reload under the selected warehouse shipping address', async () => {
+            checkoutService = checkout.use(CheckoutPreset.CheckoutWithMultiShippingCart);
+
+            const cartId = checkoutWithMultiShippingCart.id;
+            const handoff = jest.spyOn(warehouseConfig, 'getWarehouseCheckout').mockReturnValue({
+                version: 1,
+                cartId,
+                preview: true,
+                warehouse: {
+                    id: 'forney',
+                    label: 'Forney',
+                    pickupLabel: 'Forney, TX',
+                    locationId: 1,
+                    pickupMethodId: 1,
+                    allowShipping: true,
+                },
+                validation: {
+                    endpoint: 'https://example.invalid/validate',
+                    token: 'test',
+                    revision: '1',
+                    expiresAt: 9999999999,
+                },
+            });
+            const endpoint = jest
+                .spyOn(freight, 'freightEndpoint')
+                .mockReturnValue('https://example.invalid/freight');
+            const load = jest.spyOn(freight, 'loadFreightPreferences').mockResolvedValue({
+                version: 1,
+                cartId,
+                revision: '1',
+                preferences: null,
+                services: [],
+            });
+
+            try {
+                render(<CheckoutTest {...defaultProps} />);
+
+                const picker = await screen.findByTestId('address-select-button');
+
+                expect(
+                    screen.queryByRole('button', { name: /Apply delivery options/ }),
+                ).not.toBeInTheDocument();
+                expect(
+                    screen.queryByRole('button', { name: 'Reload preferences' }),
+                ).not.toBeInTheDocument();
+                checkout.updateCheckout(
+                    'post',
+                    '/checkouts/xxxxxxxxxx-xxxx-xxax-xxxx-xxxxxx/consignments',
+                    {
+                        ...checkoutWithMultiShippingCart,
+                        consignments: [
+                            {
+                                ...consignment,
+                                shippingAddress: customer.addresses[0],
+                                selectedShippingOption: undefined,
+                            },
+                        ],
+                    },
+                );
+                await userEvent.click(picker);
+                await userEvent.click(screen.getByText(/111 Testing Rd/));
+
+                const apply = await screen.findByRole('button', { name: /Apply delivery options/ });
+                const reload = screen.getByRole('button', { name: 'Reload preferences' });
+
+                expect(picker.compareDocumentPosition(apply)).toBe(
+                    Node.DOCUMENT_POSITION_FOLLOWING,
+                );
+                expect(apply.compareDocumentPosition(reload)).toBe(
+                    Node.DOCUMENT_POSITION_FOLLOWING,
+                );
+
+                const reads = load.mock.calls.length;
+
+                await userEvent.click(reload);
+                await waitFor(() => expect(load).toHaveBeenCalledTimes(reads + 1));
+                expect(picker).toHaveTextContent('111 Testing Rd');
+                checkout.updateCheckout(
+                    'delete',
+                    '/checkouts/xxxxxxxxxx-xxxx-xxax-xxxx-xxxxxx/consignments/consignment-1',
+                    checkoutWithMultiShippingCart,
+                );
+                // The embedded test keeps the menu open after selection in some themes.
+                if (!screen.queryByTestId('add-new-address')) await userEvent.click(picker);
+                await userEvent.click(screen.getByTestId('add-new-address'));
+                await waitFor(() => expect(apply).not.toBeInTheDocument());
+                expect(reload).not.toBeInTheDocument();
+                expect(screen.getByLabelText('First Name')).toBeVisible();
+            } finally {
+                load.mockRestore();
+                endpoint.mockRestore();
+                handoff.mockRestore();
+            }
+        });
+
+        it('lets a warehouse shopper select a saved address before Freight approval', async () => {
+            checkoutService = checkout.use(CheckoutPreset.CheckoutWithMultiShippingCart);
+
+            const update = jest.spyOn(checkoutService, 'updateShippingAddress');
+            const setAddressBusy = jest.fn();
+            const form = (freightReady: boolean) => (
+                <WarehouseShippingContext.Provider value={{ freightReady, setAddressBusy }}>
+                    <CheckoutTest {...defaultProps} />
+                </WarehouseShippingContext.Provider>
+            );
+            const view = render(form(false));
+
+            const picker = await screen.findByTestId('address-select-button');
+
+            await userEvent.click(picker);
+            expect(screen.getByTestId('add-new-address')).toBeVisible();
+            expect(screen.getByText(/222 Testing Rd/)).toBeVisible();
+
+            const selected = customer.addresses[0];
+
+            checkout.updateCheckout(
+                'post',
+                '/checkouts/xxxxxxxxxx-xxxx-xxax-xxxx-xxxxxx/consignments',
+                {
+                    ...checkoutWithMultiShippingCart,
+                    consignments: [
+                        {
+                            ...consignment,
+                            shippingAddress: selected,
+                            selectedShippingOption: undefined,
+                        },
+                    ],
+                },
+            );
+            await userEvent.click(screen.getByText(/111 Testing Rd/));
+            await waitFor(() => expect(picker).toHaveTextContent('111 Testing Rd'));
+            expect(update).toHaveBeenCalledWith(
+                expect.objectContaining({ address1: '111 Testing Rd' }),
+                {
+                    params: { include: { 'consignments.availableShippingOptions': false } },
+                },
+            );
+            expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+            expect(screen.queryByText(/Shipping method/i)).not.toBeInTheDocument();
+            checkout.updateCheckout(
+                'put',
+                '/checkouts/xxxxxxxxxx-xxxx-xxax-xxxx-xxxxxx/consignments/consignment-1',
+                {
+                    ...checkoutWithMultiShippingCart,
+                    consignments: [{ ...consignment, shippingAddress: selected }],
+                },
+            );
+            view.rerender(form(true));
+            await checkout.waitForShippingStep();
+            expect(screen.getByTestId('address-select-button')).toBe(picker);
+            expect(picker).toHaveTextContent('111 Testing Rd');
+        });
+
+        it('offers freight actions only after a newly entered shipping address is accepted', async () => {
+            checkoutService = checkout.use(CheckoutPreset.CheckoutWithLoggedInCustomer);
+
+            const setFreightActionsTarget = jest.fn();
+
+            render(
+                <WarehouseShippingContext.Provider
+                    value={{ freightReady: false, setAddressBusy: noop, setFreightActionsTarget }}
+                >
+                    <CheckoutTest {...defaultProps} />
+                </WarehouseShippingContext.Provider>,
+            );
+
+            const picker = await screen.findByTestId('address-select-button');
+
+            await userEvent.click(picker);
+            await userEvent.click(screen.getByTestId('add-new-address'));
+            expect(screen.getByLabelText('First Name')).toBeVisible();
+            expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+            expect(setFreightActionsTarget).not.toHaveBeenCalled();
+
+            const destination = {
+                ...shippingAddress,
+                firstName: customer.firstName,
+                lastName: customer.lastName,
+                phone: '',
+                stateOrProvince: '',
+                stateOrProvinceCode: '',
+            };
+
+            checkout.updateCheckout(
+                'post',
+                '/checkouts/xxxxxxxxxx-xxxx-xxax-xxxx-xxxxxx/consignments',
+                {
+                    ...checkoutWithLoggedInCustomer,
+                    consignments: [
+                        {
+                            ...consignment,
+                            shippingAddress: destination,
+                            selectedShippingOption: undefined,
+                        },
+                    ],
+                },
+            );
+            await checkout.fillAddressForm(destination);
+            await waitFor(
+                () =>
+                    expect(setFreightActionsTarget).toHaveBeenLastCalledWith(
+                        expect.any(HTMLDivElement),
+                    ),
+                { timeout: 4500 },
+            );
+            await userEvent.clear(screen.getByLabelText('Postal Code'));
+            await waitFor(() => expect(setFreightActionsTarget).toHaveBeenLastCalledWith(null));
+        });
+
         it('completes the shipping step as a guest and goes to the payment step by default', async () => {
             checkoutService = checkout.use(CheckoutPreset.CheckoutWithBillingEmail);
 

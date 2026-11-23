@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { Tooltip, TooltipTrigger } from '@bigcommerce/checkout/ui';
 
@@ -15,6 +16,7 @@ export default function FreightDelivery({
     pickup,
     ready,
     busy = false,
+    shippingActionsTarget,
     onApply,
     onReady,
     onUnready,
@@ -22,6 +24,7 @@ export default function FreightDelivery({
     pickup: boolean;
     ready: boolean;
     busy?: boolean;
+    shippingActionsTarget?: HTMLElement | null;
     onApply(codes: string[]): Promise<boolean>;
     onUnready(): void;
     onReady(): void;
@@ -52,7 +55,11 @@ export default function FreightDelivery({
             }
         } catch {
             setShippingQuoteStatus('failed');
-            setError('Unable to load delivery preferences. Reload preferences to retry.');
+            setError(
+                pickup
+                    ? 'Unable to load pickup preferences. Please retry.'
+                    : 'Unable to load delivery preferences. Reload preferences after choosing a shipping address.',
+            );
         } finally {
             setLoading(false);
         }
@@ -62,6 +69,55 @@ export default function FreightDelivery({
         if (enabled) void reload(false);
     }, [enabled, pickup]);
     if (!enabled) return null;
+
+    const actions = (
+        <div className="warehouseDelivery-actions">
+            <button
+                className="button optimizedCheckout-buttonSecondary"
+                disabled={!data || loading || busy}
+                onClick={async () => {
+                    setLoading(true);
+                    setError('');
+                    onUnready();
+                    setShippingQuoteStatus('loading');
+
+                    try {
+                        const success = await onApply(pickup ? [] : codes);
+
+                        setShippingQuoteStatus(success ? 'ready' : 'failed');
+                        if (!success)
+                            setError('Delivery options were not confirmed. Please retry.');
+                    } catch {
+                        invalidateFreight();
+                        setShippingQuoteStatus('failed');
+                        onUnready();
+                        setError('Delivery options were not confirmed. Please retry.');
+                    } finally {
+                        setLoading(false);
+                    }
+                }}
+                type="button"
+            >
+                {loading
+                    ? 'Checking delivery preferences…'
+                    : pickup
+                      ? 'Confirm pickup preferences'
+                      : 'Apply delivery options & refresh rates'}
+            </button>
+            {(!pickup || error) && (
+                <button
+                    className="warehouseDelivery-reload"
+                    disabled={loading || busy}
+                    onClick={() => {
+                        void reload();
+                    }}
+                    type="button"
+                >
+                    {pickup ? 'Retry pickup preferences' : 'Reload preferences'}
+                </button>
+            )}
+        </div>
+    );
 
     return (
         <section
@@ -138,53 +194,9 @@ export default function FreightDelivery({
                             : 'Delivery options saved. Choose a shipping rate below.'}
                     </p>
                 )}
-                <div className="warehouseDelivery-actions">
-                    <button
-                        className="button optimizedCheckout-buttonSecondary"
-                        disabled={!data || loading}
-                        onClick={async () => {
-                            setLoading(true);
-                            setError('');
-                            onUnready();
-                            setShippingQuoteStatus('loading');
-
-                            try {
-                                const success = await onApply(pickup ? [] : codes);
-
-                                setShippingQuoteStatus(success ? 'ready' : 'failed');
-                                if (!success)
-                                    setError(
-                                        'Delivery options were not confirmed. Reload preferences and retry.',
-                                    );
-                            } catch {
-                                invalidateFreight();
-                                setShippingQuoteStatus('failed');
-                                onUnready();
-                                setError(
-                                    'Delivery options were not confirmed. Reload preferences and retry.',
-                                );
-                            } finally {
-                                setLoading(false);
-                            }
-                        }}
-                        type="button"
-                    >
-                        {loading
-                            ? 'Checking delivery preferences…'
-                            : pickup
-                              ? 'Confirm pickup preferences'
-                              : 'Apply delivery options & refresh rates'}
-                    </button>
-                    <button
-                        className="warehouseDelivery-reload"
-                        onClick={() => {
-                            void reload();
-                        }}
-                        type="button"
-                    >
-                        Reload preferences
-                    </button>
-                </div>
+                {pickup
+                    ? actions
+                    : shippingActionsTarget && createPortal(actions, shippingActionsTarget)}
             </fieldset>
         </section>
     );
