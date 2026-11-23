@@ -137,14 +137,15 @@ async function exchangeHandoff(
     );
 
     if (
-        deployment.mode !== 'development' ||
         !store?.currentCustomerClientId ||
         !store.handoffEndpoint ||
         !/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(handoffId)
     )
         throw new Error('Return to your cart and open Checkout again.');
 
-    const loopback = new URL(store.handoffEndpoint).hostname === 'localhost';
+    const loopback =
+        deployment.mode === 'development' &&
+        new URL(store.handoffEndpoint).hostname === 'localhost';
     const request = loopback ? fetchLocalCatalyst : fetch;
 
     if (loopback) {

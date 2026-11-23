@@ -17,6 +17,39 @@ function httpsUrl(value, originOnly, local = false) {
     return originOnly ? url.origin : url.href;
 }
 
+function oneClickSettings(store, mode) {
+    const hosted = mode === 'staging';
+
+    if (
+        store.oneClickEnabled !== undefined &&
+        (!hosted || typeof store.oneClickEnabled !== 'boolean')
+    )
+        throw new Error('Invalid hosted one-click opt-in');
+
+    if (
+        hosted
+            ? !store.oneClickEnabled
+            : store.currentCustomerClientId === undefined && store.handoffEndpoint === undefined
+    )
+        return {};
+
+    const endpoint = new URL(httpsUrl(store.handoffEndpoint, false, !hosted));
+
+    if (
+        typeof store.currentCustomerClientId !== 'string' ||
+        !/^[a-zA-Z0-9_-]{1,128}$/.test(store.currentCustomerClientId) ||
+        endpoint.origin !== new URL(store.validationEndpoint).origin ||
+        (hosted && /(^|\.)localhost\.?$|^127\.|^\[::1\]$/i.test(endpoint.hostname))
+    )
+        throw new Error('Invalid one-click identity configuration');
+
+    return {
+        ...(hosted ? { oneClickEnabled: true } : {}),
+        currentCustomerClientId: store.currentCustomerClientId,
+        handoffEndpoint: endpoint.href,
+    };
+}
+
 function readWarehouseDeployment(mode = 'off', encodedStores = '[]') {
     try {
         if (!['off', 'staging', 'development'].includes(mode)) throw new Error('Invalid mode');
@@ -43,25 +76,9 @@ function readWarehouseDeployment(mode = 'off', encodedStores = '[]') {
             if (store.allowTestProvider === true && store.allowCheckTest === true)
                 throw new Error('Choose one test payment opt-in');
 
-            if (
-                (store.currentCustomerClientId !== undefined ||
-                    store.handoffEndpoint !== undefined) &&
-                (mode !== 'development' ||
-                    typeof store.currentCustomerClientId !== 'string' ||
-                    !/^[a-zA-Z0-9_-]{1,128}$/.test(store.currentCustomerClientId) ||
-                    new URL(httpsUrl(store.handoffEndpoint, false, true)).origin !==
-                        new URL(store.validationEndpoint).origin)
-            )
-                throw new Error('Invalid development identity configuration');
-
             return {
                 ...(store.allowTestProvider === true ? { allowTestProvider: true } : {}),
-                ...(store.currentCustomerClientId
-                    ? {
-                          currentCustomerClientId: store.currentCustomerClientId,
-                          handoffEndpoint: store.handoffEndpoint,
-                      }
-                    : {}),
+                ...oneClickSettings(store, mode),
                 ...(store.allowCheckTest === true ? { allowCheckTest: true } : {}),
                 checkoutOrigin: httpsUrl(store.checkoutOrigin, true),
                 validationEndpoint: httpsUrl(

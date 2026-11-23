@@ -97,6 +97,39 @@ it('permits localhost endpoints only in development mode and rejects production 
     }
 });
 
+it('enables hosted one-click only for an explicitly configured store', () => {
+    const identity = {
+        currentCustomerClientId: 'example-app',
+        handoffEndpoint: 'https://store-a.example/api/warehouse/initialize',
+    };
+    const enabled = { ...stores[0], ...identity, oneClickEnabled: true };
+    const read = (store: object) =>
+        readWarehouseDeployment('staging', JSON.stringify([store])).stores[0];
+
+    expect(read(enabled)).toEqual(enabled);
+    expect(read({ ...stores[0], ...identity })).toEqual(stores[0]);
+    expect(read({ ...enabled, oneClickEnabled: false })).toEqual(stores[0]);
+    expect(() => read({ ...enabled, oneClickEnabled: 'true' })).toThrow();
+    expect(() => read({ ...enabled, currentCustomerClientId: undefined })).toThrow();
+    expect(() => read({ ...enabled, handoffEndpoint: undefined })).toThrow();
+    expect(() => read({ ...enabled, handoffEndpoint: 'https://other.example/init' })).toThrow();
+
+    for (const base of [
+        'http://store-a.example',
+        'https://localhost',
+        'https://127.0.0.1',
+        'https://[::1]',
+    ]) {
+        expect(() =>
+            read({
+                ...enabled,
+                handoffEndpoint: `${base}/init`,
+                validationEndpoint: `${base}/validate`,
+            }),
+        ).toThrow();
+    }
+});
+
 it('allows freight only on the store validator backend origin', () => {
     expect(
         readWarehouseDeployment(

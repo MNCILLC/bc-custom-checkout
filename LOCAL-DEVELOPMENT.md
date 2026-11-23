@@ -31,7 +31,7 @@ Rollback locally: remove `freightEndpoint` from the checkout mapping and restart
 
 For fresh pickup-only carts, the storefront handoff must attach native pickup before redirecting to BigCommerce; otherwise native checkout loading can reject stock held only at that location. Catalyst performs this after session/stock authorization. The checkout opens delivery review once for a prepared cart, so a native completed consignment does not skip the preference confirmation UI. This requirement is part of the backend integration contract for other storefronts as well.
 
-### One-click warehouse initialization (local prototype)
+### One-click warehouse initialization
 
 In Catalyst development mode set `WAREHOUSE_ONE_CLICK_ENABLED=true`,
 `WAREHOUSE_CURRENT_CUSTOMER_CLIENT_ID`, and `WAREHOUSE_CURRENT_CUSTOMER_CLIENT_SECRET`.
@@ -40,6 +40,20 @@ Use an app-level BigCommerce credential pair. In the local checkout's
 and set `handoffEndpoint` to `http://localhost:3000/api/warehouse/initialize` when
 Catalyst uses `TRAILING_SLASH=false`. Include the trailing slash if Catalyst requires one.
 Restart the local builds after changing their configuration. Keep the client secret on the backend.
+
+For a hosted storefront, use Catalyst's `multi-location` mode (or its `staging`
+alias) in a production build. The standalone checkout uses `WAREHOUSE_CHECKOUT_MODE=staging`.
+Set `oneClickEnabled: true` in the intended store's `WAREHOUSE_CHECKOUT_STORES` entry,
+alongside its public `currentCustomerClientId` and HTTPS `handoffEndpoint`. Use the
+same origin as `validationEndpoint` and the exact initialization path, including
+the trailing slash if required. Keep the existing `initializationEndpoint` for
+manual authorization. Deploy the compatible loader before enabling Catalyst's
+`WAREHOUSE_ONE_CLICK_ENABLED=true` and its server-side app credentials.
+
+New cart handoffs use Continue securely when the Catalyst flag is unset or false.
+For rollback, disable that flag first. A checkout already holding a one-click
+reference can return to the cart and open Checkout again. Both purchase opt-ins
+are independent of one-click and default to off.
 
 The cart's Checkout button starts a two-minute handoff in the configured warehouse Redis.
 The redirect carries its random ID in the URL fragment. Hosted checkout reads BigCommerce's
