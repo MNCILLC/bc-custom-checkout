@@ -154,3 +154,71 @@ it('requires a user click and does not install superseded authorization', async 
     await expected;
     expect(window.warehouseCheckout).toBeUndefined();
 });
+
+describe('local one-click handoff', () => {
+    const id = 'a1111111-1111-4111-8111-111111111111';
+    let request: jest.SpyInstance;
+    const original = process.env;
+
+    beforeEach(() => {
+        process.env = {
+            ...process.env,
+            NODE_ENV: 'development',
+            WAREHOUSE_CHECKOUT_MODE: 'development',
+            WAREHOUSE_CHECKOUT_STORES: JSON.stringify([
+                {
+                    checkoutOrigin: window.location.origin,
+                    currentCustomerClientId: 'app-public-id',
+                    handoffEndpoint: 'https://store.example/api/warehouse/initialize',
+                    validationEndpoint: config.validation.endpoint,
+                },
+            ]),
+        };
+        history.replaceState(null, '', `/checkout#warehouseHandoff=${id}`);
+        request = jest.spyOn(globalThis, 'fetch');
+        request.mockResolvedValueOnce(new Response('synthetic-shopper-proof'));
+    });
+    afterEach(() => {
+        request.mockRestore();
+        history.replaceState(null, '', '/checkout');
+        process.env = original;
+    });
+    it('initializes directly once across two renders and removes the spent fragment', async () => {
+        request.mockResolvedValueOnce(Response.json(config));
+
+        const box = document.createElement('div');
+        const obsolete = initializeWarehouseCheckout(box, 'cart-a', () => false);
+        const current = initializeWarehouseCheckout(box, 'cart-a', () => true);
+
+        await expect(obsolete).rejects.toThrow('superseded');
+        await current;
+        expect(box.querySelector('button')).toBeNull();
+        expect(open).not.toHaveBeenCalled();
+        expect(request).toHaveBeenCalledTimes(2);
+        expect(request.mock.calls[0][0]).toBe(
+            'https://checkout.example/customer/current.jwt?app_client_id=app-public-id',
+        );
+        expect(request.mock.calls[1]).toEqual([
+            'https://store.example/api/warehouse/initialize',
+            expect.objectContaining({
+                credentials: 'omit',
+                redirect: 'error',
+                headers: expect.objectContaining({
+                    Authorization: 'Bearer synthetic-shopper-proof',
+                }),
+                body: JSON.stringify({ cartId: 'cart-a', handoffId: id }),
+            }),
+        ]);
+        expect(window.warehouseCheckout).toEqual(config);
+        expect(window.location.hash).toBe('');
+    });
+    it('leaves a stale handoff blocked without opening the popup', async () => {
+        request.mockResolvedValueOnce(new Response(null, { status: 409 }));
+        await expect(
+            initializeWarehouseCheckout(document.body, 'cart-a', () => true),
+        ).rejects.toThrow();
+        expect(window.warehouseCheckout).toBeUndefined();
+        expect(open).not.toHaveBeenCalled();
+        expect(window.location.hash).toContain(id);
+    });
+});

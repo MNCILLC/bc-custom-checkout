@@ -43,8 +43,25 @@ function readWarehouseDeployment(mode = 'off', encodedStores = '[]') {
             if (store.allowTestProvider === true && store.allowCheckTest === true)
                 throw new Error('Choose one test payment opt-in');
 
+            if (
+                (store.currentCustomerClientId !== undefined ||
+                    store.handoffEndpoint !== undefined) &&
+                (mode !== 'development' ||
+                    typeof store.currentCustomerClientId !== 'string' ||
+                    !/^[a-zA-Z0-9_-]{1,128}$/.test(store.currentCustomerClientId) ||
+                    new URL(httpsUrl(store.handoffEndpoint, false, true)).origin !==
+                        new URL(store.validationEndpoint).origin)
+            )
+                throw new Error('Invalid development identity configuration');
+
             return {
                 ...(store.allowTestProvider === true ? { allowTestProvider: true } : {}),
+                ...(store.currentCustomerClientId
+                    ? {
+                          currentCustomerClientId: store.currentCustomerClientId,
+                          handoffEndpoint: store.handoffEndpoint,
+                      }
+                    : {}),
                 ...(store.allowCheckTest === true ? { allowCheckTest: true } : {}),
                 checkoutOrigin: httpsUrl(store.checkoutOrigin, true),
                 validationEndpoint: httpsUrl(

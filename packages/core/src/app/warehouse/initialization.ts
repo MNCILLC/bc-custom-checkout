@@ -121,12 +121,112 @@ export function requestWarehouseInitialization(cartId: string): Promise<Warehous
     });
 }
 
+let automaticRequest:
+    | { cartId: string; fragment: string; result: Promise<WarehouseCheckoutConfig> }
+    | undefined;
+
+async function exchangeHandoff(
+    cartId: string,
+    handoffId: string,
+): Promise<WarehouseCheckoutConfig> {
+    const deployment = getWarehouseDeployment();
+    const store = deployment.stores.find(
+        (entry) => entry.checkoutOrigin === window.location.origin,
+    );
+
+    if (
+        deployment.mode !== 'development' ||
+        !store?.currentCustomerClientId ||
+        !store.handoffEndpoint ||
+        !/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(handoffId)
+    )
+        throw new Error('Return to your cart and open Checkout again.');
+
+    const identityUrl = new URL('/customer/current.jwt', window.location.origin);
+
+    identityUrl.searchParams.set('app_client_id', store.currentCustomerClientId);
+
+    const identity = await fetch(identityUrl.href, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        redirect: 'error',
+    });
+
+    if (!identity.ok) throw new Error('Sign in and reopen Checkout from your cart.');
+
+    const token = (await identity.text()).trim();
+
+    if (!token || token.length > 8192) throw new Error('Shopper identity is unavailable.');
+
+    const response = await fetch(store.handoffEndpoint, {
+        method: 'POST',
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ cartId, handoffId }),
+    });
+
+    if (!response.ok) {
+        if (response.status === 409) {
+            const problem = (await response.json().catch(() => null)) as {
+                code?: string;
+                message?: string;
+            } | null;
+
+            if (problem?.code === 'INVENTORY_CONFLICT' && typeof problem.message === 'string')
+                throw new WarehouseInventoryConflict(problem.message);
+        }
+
+        throw new Error('Return to your cart and open Checkout again.');
+    }
+
+    const config = (await response.json()) as WarehouseCheckoutConfig;
+
+    validateWarehouseCheckout(config, cartId);
+
+    return config;
+}
+
 export function initializeWarehouseCheckout(
     container: Element,
     cartId: string,
     isCurrent: () => boolean,
     fromRetryClick = false,
 ): Promise<void> {
+    const fragment = window.location.hash;
+    const params = new URLSearchParams(fragment.slice(1));
+
+    if (params.has('warehouseHandoff')) {
+        if (
+            !automaticRequest ||
+            automaticRequest.cartId !== cartId ||
+            automaticRequest.fragment !== fragment
+        ) {
+            const result = exchangeHandoff(cartId, params.get('warehouseHandoff') ?? '');
+
+            automaticRequest = { cartId, fragment, result };
+
+            const clear = () => {
+                if (automaticRequest?.result === result) automaticRequest = undefined;
+            };
+
+            void result.then(clear, clear);
+        }
+
+        return automaticRequest.result.then((config) => {
+            if (!isCurrent() || window.location.hash !== fragment)
+                throw new Error('Authorization was superseded.');
+            window.warehouseCheckout = config;
+            params.delete('warehouseHandoff');
+
+            const url = new URL(window.location.href);
+
+            url.hash = params.toString();
+            window.history.replaceState(window.history.state, '', url.href);
+        });
+    }
+
     if (window.warehouseCheckout !== undefined) {
         validateWarehouseCheckout(window.warehouseCheckout, cartId);
 

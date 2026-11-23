@@ -2,6 +2,8 @@ export interface WarehouseDeployment {
     mode: 'off' | 'staging' | 'development';
     stores: Array<{
         checkoutOrigin: string;
+        currentCustomerClientId?: string;
+        handoffEndpoint?: string;
         allowCheckTest?: boolean;
         allowTestProvider?: boolean;
         validationEndpoint: string;
