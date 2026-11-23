@@ -89,15 +89,15 @@ export default function renderCheckout({
             retry.onclick = () => {
                 if (!current()) return;
                 delete window.warehouseCheckout;
+                retry.remove();
 
-                if (stockConflict) {
-                    // Open the authenticated storefront popup inside this user gesture.
-                    initialize(true, error.message);
-
-                    return;
+                if (!stockConflict) {
+                    notice.setAttribute('role', 'status');
+                    notice.textContent = 'Reopening checkout…';
                 }
 
-                renderCheckout({ containerId, publicPath, ...props });
+                // A stock retry opens the storefront popup directly from this click.
+                void initialize(stockConflict, stockConflict ? error.message : undefined);
             };
 
             container.appendChild(retry);
@@ -134,27 +134,26 @@ export default function renderCheckout({
         );
     };
 
-    const initialize = (fromRetryClick: boolean, resolvedStockWarning?: string) => {
-        message(false);
-        // Initialization uses the storefront session; server validation must
-        // succeed before importing SDK checkout or payment recovery code.
-        void initializeWarehouseCheckout(container, props.checkoutId, current, fromRetryClick)
-            .then(async () => {
-                if (!current()) throw new Error('Authorization was superseded.');
-                if (recoveryRequired()) throw new Error(RECOVERY_MESSAGE);
-                await validateCurrentWarehouse();
-                if (current() && fromRetryClick) await restorePickupReview();
-            })
+    const initialize = async (fromRetryClick: boolean, resolvedStockWarning?: string) => {
+        try {
+            await initializeWarehouseCheckout(container, props.checkoutId, current, fromRetryClick);
+            if (!current()) return;
+            if (recoveryRequired()) throw new Error(RECOVERY_MESSAGE);
+            await validateCurrentWarehouse();
+            if (current() && fromRetryClick) await restorePickupReview();
             // Initial HTML can contain a stock error recorded before the successful retry.
-            .then(() => mount(fromRetryClick, resolvedStockWarning))
-            .catch((error: unknown) => message(true, error));
+            mount(fromRetryClick, resolvedStockWarning);
+        } catch (error) {
+            message(true, error);
+        }
     };
 
     try {
         showLocalCheckoutNotice(container);
 
         if (getWarehouseDeployment().mode !== 'off') {
-            initialize(false);
+            message(false);
+            void initialize(false);
         } else {
             mount();
         }

@@ -1,3 +1,4 @@
+import type { CheckoutService } from '@bigcommerce/checkout-sdk/essential';
 import { renderHook } from '@testing-library/react';
 
 import * as contexts from '@bigcommerce/checkout/contexts';
@@ -15,6 +16,7 @@ import {
 import { getAddressFormFields } from '../../address/formField.mock';
 import { getBillingAddress } from '../../billing/billingAddresses.mock';
 import { getCountries } from '../../geography/countries.mock';
+import { backgroundWarehouseChecks } from '../../warehouse/submissionState';
 
 import { useShipping } from './useShipping';
 
@@ -85,6 +87,27 @@ describe('useShipping', () => {
         expect(result.current.customer).toEqual(getCustomer());
         expect(result.current.shouldShowOrderComments).toBe(true);
         expect(result.current.shouldShowMultiShipping).toBe(false);
+    });
+
+    it('keeps shipping usable during a warehouse refresh and busy during shipping changes', () => {
+        const service = checkoutService as unknown as CheckoutService;
+
+        jest.spyOn(checkoutState.statuses, 'isLoadingCheckout').mockReturnValue(true);
+
+        const { result, rerender } = renderHook(() => useShipping());
+
+        expect(result.current.isLoading).toBe(true);
+        backgroundWarehouseChecks.set(service, Promise.resolve());
+
+        try {
+            rerender();
+            expect(result.current.isLoading).toBe(false);
+            jest.spyOn(checkoutState.statuses, 'isUpdatingConsignment').mockReturnValue(true);
+            rerender();
+            expect(result.current.isLoading).toBe(true);
+        } finally {
+            backgroundWarehouseChecks.delete(service);
+        }
     });
 
     describe('shouldShowMultiShipping', () => {

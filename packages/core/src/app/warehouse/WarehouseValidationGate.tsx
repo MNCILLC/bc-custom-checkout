@@ -1,5 +1,5 @@
 import { type CheckoutService } from '@bigcommerce/checkout-sdk/essential';
-import React, { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import React, { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 
 import { getWarehouseCheckout } from './config';
 import { RECOVERY_EVENT, RECOVERY_MESSAGE, submissionNeedsReview } from './recovery';
@@ -15,7 +15,6 @@ export default function WarehouseValidationGate({
     children: ReactNode;
 }) {
     const [ready, setReady] = useState(!getWarehouseCheckout());
-    const [checking, setChecking] = useState(!!getWarehouseCheckout());
     const [error, setError] = useState('');
     const [retry, setRetry] = useState(0);
     const [recovery, setRecovery] = useState(submissionNeedsReview());
@@ -24,7 +23,6 @@ export default function WarehouseValidationGate({
         subscribeTestProviderEligibility,
         getCartLimitMessage,
     );
-    const content = useRef<HTMLFieldSetElement>(null);
 
     useEffect(() => {
         const update = () => {
@@ -70,13 +68,6 @@ export default function WarehouseValidationGate({
                 return;
             }
 
-            // A mounted standard payment form has passed the initial check. Its submit
-            // guard waits for this check; disabling the button here would discard the click.
-            setChecking(
-                !content.current?.querySelector(
-                    'form[data-warehouse-validated-submit="true"] button#checkout-payment-continue[type="submit"]',
-                ),
-            );
             running = checkWarehouse(refresh);
             backgroundWarehouseChecks.set(checkoutService, running);
 
@@ -98,13 +89,9 @@ export default function WarehouseValidationGate({
             } finally {
                 running = undefined;
 
-                if (active) {
-                    setChecking(false);
-
-                    if (queued) {
-                        queued = false;
-                        void validate();
-                    }
+                if (active && queued) {
+                    queued = false;
+                    void validate();
                 }
             }
         };
@@ -145,7 +132,7 @@ export default function WarehouseValidationGate({
 
     return (
         <>
-            {(checking || submitting || error || recovery) && (
+            {(!ready || submitting || error || recovery) && (
                 <div
                     data-test="warehouse-validation"
                     role={error || (recovery && !submitting) ? 'alert' : 'status'}
@@ -175,8 +162,7 @@ export default function WarehouseValidationGate({
             )}
             <fieldset
                 data-test="warehouse-validation-content"
-                disabled={checking || submitting || !!error || recovery}
-                ref={content}
+                disabled={!ready || submitting || !!error || recovery}
                 {...(submitting && recovery ? { inert: '' } : {})}
                 style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
             >

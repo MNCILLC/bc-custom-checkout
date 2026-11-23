@@ -304,6 +304,8 @@ it('displays the authenticated shortage after reload and mounts after a single s
     await act(async () => screen.getByRole('button', { name: 'Retry verification' }).click());
     expect(open).toHaveBeenCalledTimes(2);
     expect(screen.queryByText('Continue securely')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(message);
+    expect(screen.queryByText(/Verifying your warehouse and inventory/)).not.toBeInTheDocument();
     await popupReply({ warehouseCheckout: config });
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();

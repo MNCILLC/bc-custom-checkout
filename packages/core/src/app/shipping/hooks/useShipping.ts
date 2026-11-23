@@ -15,6 +15,7 @@ import { encodeAddressForWrite } from '../../address';
 import { EMPTY_ARRAY } from '../../common/utility';
 import getBackorderCount from '../../order/getBackorderCount';
 import getProviderWithCustomCheckout from '../../payment/getProviderWithCustomCheckout';
+import { backgroundWarehouseChecks } from '../../warehouse/submissionState';
 import getShippingMethodId from '../getShippingMethodId';
 import hasPromotionalItems from '../hasPromotionalItems';
 import { shouldShowMultiShippingToggle } from '../utils';
@@ -145,7 +146,7 @@ export const useShipping = () => {
         isUpdatingCheckout() ||
         isCreatingCustomerAddress() ||
         isDeletingConsignment() ||
-        isLoadingCheckout();
+        (isLoadingCheckout() && !backgroundWarehouseChecks.has(checkoutService));
 
     const shouldShowMultiShipping = shouldShowMultiShippingToggle(checkout, config, cart);
 
