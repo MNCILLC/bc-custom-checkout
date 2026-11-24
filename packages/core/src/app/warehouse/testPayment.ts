@@ -1,14 +1,18 @@
 import {
     assertCheckTestPayment,
-    beginCheckTestAttempt,
     canSubmitCheckTest,
+    checkTestAuthorization,
+    type CheckTestClaim,
     type CheckTestPayment,
 } from './checkTest';
+import { getWarehouseCheckout } from './config';
 import { getWarehouseDeployment } from './deployment';
+import { markSubmissionAttempt } from './recovery';
 import {
     assertTestProviderPayment,
-    beginTestProviderAttempt,
     canSubmitTestProvider,
+    testProviderAuthorization,
+    type TestProviderClaim,
 } from './testProvider';
 
 export function canSubmitTestPayment() {
@@ -33,10 +37,33 @@ export function assertTestPayment(payment: CheckTestPayment | undefined) {
     assertTestProviderPayment(payment);
 }
 
-export function beginTestPaymentAttempt(payment: CheckTestPayment | undefined) {
+export type PaymentAttempt =
+    | { checkTest: CheckTestClaim; testProvider?: never }
+    | { testProvider: TestProviderClaim; checkTest?: never };
+
+export function beginTestPaymentAttempt(payment: CheckTestPayment | undefined): PaymentAttempt {
     assertTestPayment(payment);
 
-    return payment?.methodId === 'cheque'
-        ? { checkTest: beginCheckTestAttempt(payment), testProvider: undefined }
-        : { testProvider: beginTestProviderAttempt(payment), checkTest: undefined };
+    const config = getWarehouseCheckout();
+    const grant =
+        payment?.methodId === 'cheque' ? checkTestAuthorization() : testProviderAuthorization();
+
+    if (!config || !grant || grant.methodId !== payment?.methodId)
+        throw new Error('Payment authorization is unavailable for the selected method.');
+
+    markSubmissionAttempt(config);
+
+    const { token, methodId } = grant;
+
+    return methodId === 'cheque'
+        ? { checkTest: { token, methodId, gatewayId: null } }
+        : {
+              testProvider: {
+                  token,
+                  methodId,
+                  gatewayId: null,
+                  usesStoredInstrument: false,
+                  shouldSaveInstrument: false,
+              },
+          };
 }

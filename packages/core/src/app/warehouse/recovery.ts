@@ -42,6 +42,15 @@ export function requireSubmissionReview(config?: WarehouseCheckoutConfig) {
     window.dispatchEvent(new Event(RECOVERY_EVENT));
 }
 
+// The server arbitrates other tabs. Also prevent repeat claims from this checkout
+// if browser storage is unavailable or a response disappears in transit.
+export function markSubmissionAttempt(config: WarehouseCheckoutConfig) {
+    const key = recoveryKey(config);
+
+    if (!key || attempted.has(key)) throw new Error(RECOVERY_MESSAGE);
+    requireSubmissionReview(config);
+}
+
 export function assertNoSubmissionRecovery() {
     if (submissionNeedsReview()) throw new Error(RECOVERY_MESSAGE);
 }

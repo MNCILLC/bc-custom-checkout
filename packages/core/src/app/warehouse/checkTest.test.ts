@@ -79,6 +79,7 @@ beforeEach(() => {
                         selectedPickupOption: { pickupMethodId: 12 },
                     },
                 ],
+                getPaymentMethods: () => [{ id: 'bigpaypay' }, { id: 'cheque' }],
                 getBillingAddress: () => ({ countryCode: 'US' }),
             },
         }),

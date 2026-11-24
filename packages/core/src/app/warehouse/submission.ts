@@ -65,8 +65,6 @@ export async function submitWithWarehouseValidation<T>(
     if (warehouseTransitionInProgress())
         throw new Error('Wait for your delivery choice to finish updating.');
 
-    if (canSubmitTestPayment()) assertTestPayment(payment?.());
-
     const fingerprint = () => {
         const data = service.getState().data;
 
@@ -84,6 +82,9 @@ export async function submitWithWarehouseValidation<T>(
 
     return submit({
         prepare: async () => {
+            assertNoSubmissionRecovery();
+            if (canSubmitTestPayment()) assertTestPayment(payment?.());
+
             const check = backgroundWarehouseChecks.get(service);
 
             if (check) {
@@ -130,20 +131,27 @@ export async function submitWithWarehouseValidation<T>(
                     const reviewed = fingerprint();
                     const choice = payment?.();
 
+                    assertTestPayment(choice);
+
+                    const methods = service.getState().data.getPaymentMethods();
+
+                    if (
+                        !methods?.some(
+                            (method) => method.id === choice?.methodId && !method.gateway,
+                        )
+                    )
+                        throw new Error(
+                            'This payment method is no longer available for this checkout. Choose another method.',
+                        );
+
                     if (choice?.methodId === 'bigpaypay' && retainTestProviderFields) {
-                        assertTestPayment(choice);
                         // Recording the attempt immediately makes recovery hide payment methods.
                         releaseFields = retainTestProviderFields(config.cartId);
                     }
 
                     const claim = beginTestPaymentAttempt(choice);
 
-                    await validateCurrentWarehouse(
-                        undefined,
-                        submissionSnapshot(service),
-                        claim.checkTest,
-                        claim.testProvider,
-                    );
+                    await validateCurrentWarehouse(undefined, submissionSnapshot(service), claim);
                     await assertFreightReady(service);
                     if (!canSubmitTestPayment() || fingerprint() !== reviewed)
                         throw new Error(RECOVERY_MESSAGE);

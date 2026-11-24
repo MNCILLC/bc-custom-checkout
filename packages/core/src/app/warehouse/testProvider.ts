@@ -1,4 +1,3 @@
-import { markTestPaymentAttempt } from './checkTest';
 import { getWarehouseCheckout, type WarehouseCheckoutConfig } from './config';
 import { getWarehouseDeployment } from './deployment';
 
@@ -179,26 +178,4 @@ export function assertTestProviderPayment(payment: TestProviderPayment | undefin
         throw new Error(
             'Only the native Test payment provider payment method is authorized for this test.',
         );
-}
-
-export function beginTestProviderAttempt(
-    payment: TestProviderPayment | undefined,
-): TestProviderClaim {
-    assertTestProviderPayment(payment);
-
-    const grant = testProviderAuthorization();
-    const config = getWarehouseCheckout();
-
-    if (!grant || !config) throw new Error('Test payment provider authorization is unavailable.');
-
-    // No reset on errors, reload responses, or SDK failure. Server tombstone also covers other tabs.
-    markTestPaymentAttempt(config.cartId);
-
-    return {
-        token: grant.token,
-        methodId: 'bigpaypay',
-        gatewayId: null,
-        usesStoredInstrument: false,
-        shouldSaveInstrument: false,
-    };
 }

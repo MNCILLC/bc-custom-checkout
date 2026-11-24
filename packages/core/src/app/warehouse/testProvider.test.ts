@@ -4,11 +4,12 @@ import { act, renderHook } from '@testing-library/react';
 import { getPaymentMethod } from '../payment/payment-methods.mock';
 import useTestProviderFields from '../payment/useTestProviderFields';
 
-import { acceptCheckTestAuthorization, beginCheckTestAttempt } from './checkTest';
+import { acceptCheckTestAuthorization } from './checkTest';
 import type { WarehouseCheckoutConfig } from './config';
 import { getWarehouseDeployment } from './deployment';
 import { submissionNeedsReview } from './recovery';
 import { submitWithWarehouseValidation } from './submission';
+import { beginTestPaymentAttempt } from './testPayment';
 import { acceptTestProviderAuthorization, canSubmitTestProvider } from './testProvider';
 
 jest.mock('./deployment', () => ({ getWarehouseDeployment: jest.fn() }));
@@ -95,6 +96,7 @@ beforeEach(() => {
                         selectedPickupOption: { pickupMethodId: 12 },
                     },
                 ],
+                getPaymentMethods: () => [{ id: 'bigpaypay' }, { id: 'cheque' }],
                 getBillingAddress: () => ({ countryCode: 'US' }),
             },
         }),
@@ -255,6 +257,29 @@ it.each(['cheque', 'bigpaypay'])(
         expect(claimCalls).toBe(1);
     },
 );
+
+it('shows recovery before checking a different payment method after a lost reply', async () => {
+    uncertain = true;
+    await expect(submit()).rejects.toThrow('Do not submit again');
+
+    choice.methodId = choice.selectedMethodId = 'cheque';
+    await expect(submit()).rejects.toThrow('Do not submit again');
+    expect(claimCalls).toBe(1);
+    expect(execute).not.toHaveBeenCalled();
+});
+
+it('requires the selected method to still be offered by the SDK before claiming', async () => {
+    const data = service.getState().data;
+
+    service.getState = jest
+        .fn()
+        .mockReturnValue({ data: { ...data, getPaymentMethods: () => [{ id: 'cheque' }] } });
+
+    await expect(submit()).rejects.toThrow('no longer available');
+    expect(claimCalls).toBe(0);
+    expect(execute).not.toHaveBeenCalled();
+    expect(submissionNeedsReview()).toBe(false);
+});
 
 it('default build remains preview-only even with a server grant', async () => {
     deployment.mockReturnValue({
@@ -512,7 +537,7 @@ it('an attempted provider cart cannot switch to a new Check attempt', async () =
         expiresAt: Math.floor(Date.now() / 1000) + 600,
     });
     expect(() =>
-        beginCheckTestAttempt({
+        beginTestPaymentAttempt({
             methodId: 'cheque',
             selectedMethodId: 'cheque',
             customSubmit: false,

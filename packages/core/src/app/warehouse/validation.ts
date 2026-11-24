@@ -1,17 +1,13 @@
-import {
-    acceptCheckTestAuthorization,
-    type CheckTestAuthorization,
-    type CheckTestClaim,
-} from './checkTest';
+import { acceptCheckTestAuthorization, type CheckTestAuthorization } from './checkTest';
 import { getWarehouseCheckout, validateWarehouseCheckout } from './config';
 import { WarehouseInventoryConflict } from './initialization';
 import { RECOVERY_MESSAGE, requireSubmissionReview } from './recovery';
 import { type SubmissionSnapshot } from './submission';
 import { warehouseSubmissionInProgress } from './submissionState';
+import { type PaymentAttempt } from './testPayment';
 import {
     acceptTestProviderAuthorization,
     type TestProviderAuthorization,
-    type TestProviderClaim,
     type TestProviderIneligibility,
 } from './testProvider';
 
@@ -41,10 +37,9 @@ export function beginWarehouseTransition(): () => void {
 export async function validateCurrentWarehouse(
     requestedMode?: 'pickup' | 'shipping',
     submission?: SubmissionSnapshot,
-    checkTest?: CheckTestClaim,
-    testProvider?: TestProviderClaim,
+    attempt?: PaymentAttempt,
 ): Promise<void> {
-    if (checkTest && testProvider) throw new Error('Choose one test authorization.');
+    const { checkTest, testProvider } = attempt ?? {};
 
     const current = getWarehouseCheckout();
 
@@ -82,8 +77,7 @@ export async function validateCurrentWarehouse(
                 revision: config.validation.revision,
                 ...(requestedMode ? { requestedMode } : {}),
                 ...(submission ? { submission } : {}),
-                ...(checkTest ? { checkTest } : {}),
-                ...(testProvider ? { testProvider } : {}),
+                ...attempt,
             }),
             signal: controller.signal,
         });

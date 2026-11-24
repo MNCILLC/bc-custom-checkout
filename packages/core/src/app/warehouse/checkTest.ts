@@ -1,6 +1,5 @@
 import { getWarehouseCheckout } from './config';
 import { getWarehouseDeployment } from './deployment';
-import { RECOVERY_MESSAGE, requireSubmissionReview } from './recovery';
 
 export interface CheckTestAuthorization {
     version: 1;
@@ -25,13 +24,6 @@ export interface CheckTestPayment {
 let authorization:
     | { grant: CheckTestAuthorization; cartId: string; revision: string; credential: string }
     | undefined;
-const attemptedCarts = new Set<string>();
-
-export function markTestPaymentAttempt(cartId: string) {
-    if (attemptedCarts.has(cartId)) throw new Error(RECOVERY_MESSAGE);
-    attemptedCarts.add(cartId);
-    requireSubmissionReview();
-}
 
 // Only authenticated validator responses populate this module-local state.
 export function acceptCheckTestAuthorization(value: CheckTestAuthorization | undefined) {
@@ -96,18 +88,4 @@ export function assertCheckTestPayment(payment: CheckTestPayment | undefined) {
         payment.shouldSaveInstrument
     )
         throw new Error('Only the native Check payment method is authorized for this test.');
-}
-
-export function beginCheckTestAttempt(payment: CheckTestPayment | undefined): CheckTestClaim {
-    assertCheckTestPayment(payment);
-
-    const grant = checkTestAuthorization();
-    const config = getWarehouseCheckout();
-
-    if (!grant || !config) throw new Error('Check test authorization is unavailable.');
-
-    // No reset on errors, reload responses, or SDK failure. Server tombstone also covers other tabs.
-    markTestPaymentAttempt(config.cartId);
-
-    return { token: grant.token, methodId: 'cheque', gatewayId: null };
 }

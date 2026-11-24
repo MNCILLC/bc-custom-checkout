@@ -4,7 +4,8 @@ import React from 'react';
 
 import { getWarehouseDeployment } from './deployment';
 import { submitWithWarehouseValidation } from './submission';
-import { acceptTestProviderAuthorization, beginTestProviderAttempt } from './testProvider';
+import { beginTestPaymentAttempt } from './testPayment';
+import { acceptTestProviderAuthorization } from './testProvider';
 import Gate from './WarehouseValidationGate';
 
 jest.mock('./deployment', () => ({ getWarehouseDeployment: jest.fn() }));
@@ -66,6 +67,7 @@ function setupPickupCart(cartId: string, allowTestProvider = false) {
                         selectedPickupOption: { pickupMethodId: 2 },
                     },
                 ],
+                getPaymentMethods: () => [{ id: 'bigpaypay' }],
                 getBillingAddress: () => ({ countryCode: 'US' }),
             },
         }),
@@ -324,7 +326,7 @@ it('keeps payment disabled and shows recovery after a consumed claim even if ord
     };
 
     acceptTestProviderAuthorization(grant);
-    beginTestProviderAttempt({
+    beginTestPaymentAttempt({
         methodId: 'bigpaypay',
         selectedMethodId: 'bigpaypay',
         customSubmit: false,

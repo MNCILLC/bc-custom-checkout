@@ -118,12 +118,14 @@ it('pre-claim network failures preserve verification retries; post-claim loss re
     await expect(validateCurrentWarehouse()).rejects.toThrow('Check your connection and retry');
     expect(submissionNeedsReview()).toBe(false);
     await expect(
-        validateCurrentWarehouse(undefined, undefined, undefined, {
-            token: 'synthetic',
-            methodId: 'bigpaypay',
-            gatewayId: null,
-            usesStoredInstrument: false,
-            shouldSaveInstrument: false,
+        validateCurrentWarehouse(undefined, undefined, {
+            testProvider: {
+                token: 'synthetic',
+                methodId: 'bigpaypay',
+                gatewayId: null,
+                usesStoredInstrument: false,
+                shouldSaveInstrument: false,
+            },
         }),
     ).rejects.toThrow(RECOVERY_MESSAGE);
     expect(submissionNeedsReview()).toBe(true);
@@ -137,12 +139,14 @@ it('records a lost claim response against the original cart rather than a newly 
         throw new TypeError('lost response');
     });
     await expect(
-        validateCurrentWarehouse(undefined, undefined, undefined, {
-            token: 'synthetic',
-            methodId: 'bigpaypay',
-            gatewayId: null,
-            usesStoredInstrument: false,
-            shouldSaveInstrument: false,
+        validateCurrentWarehouse(undefined, undefined, {
+            testProvider: {
+                token: 'synthetic',
+                methodId: 'bigpaypay',
+                gatewayId: null,
+                usesStoredInstrument: false,
+                shouldSaveInstrument: false,
+            },
         }),
     ).rejects.toThrow(RECOVERY_MESSAGE);
     expect(submissionNeedsReview()).toBe(false);
