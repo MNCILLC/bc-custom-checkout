@@ -83,6 +83,31 @@ it('permits localhost endpoints only in development mode and rejects production 
     try {
         Object.assign(process.env, { NODE_ENV: 'development' });
         expect(readWarehouseDeployment('development', local).mode).toBe('development');
+
+        const optedIn = JSON.stringify([{ ...JSON.parse(local)[0], allowTestProvider: true }]);
+
+        expect(readWarehouseDeployment('development', optedIn).stores[0].allowTestProvider).toBe(
+            true,
+        );
+        expect(() =>
+            readWarehouseDeployment(
+                'development',
+                optedIn.replaceAll('http://localhost:3000', 'https://remote.example'),
+            ),
+        ).toThrow();
+
+        const both = JSON.stringify([{ ...JSON.parse(optedIn)[0], allowCheckTest: true }]);
+
+        expect(readWarehouseDeployment('development', both).stores[0]).toMatchObject({
+            allowCheckTest: true,
+            allowTestProvider: true,
+        });
+        expect(() =>
+            readWarehouseDeployment(
+                'development',
+                both.replaceAll('http://localhost:3000', 'https://remote.example'),
+            ),
+        ).toThrow();
         expect(() => readWarehouseDeployment('staging', local)).toThrow();
         expect(() =>
             readWarehouseDeployment(
@@ -92,6 +117,7 @@ it('permits localhost endpoints only in development mode and rejects production 
         ).toThrow();
         Object.assign(process.env, { NODE_ENV: 'production' });
         expect(() => readWarehouseDeployment('development', local)).toThrow();
+        expect(() => readWarehouseDeployment('development', optedIn)).toThrow();
     } finally {
         Object.assign(process.env, { NODE_ENV: original });
     }
@@ -161,7 +187,7 @@ it('Check-only execution needs an explicit per-store staging opt-in', () => {
     ).toThrow();
 });
 
-it('Test provider is separately opt-in, staging-only, and exclusive of Check', () => {
+it('Test provider is separately opt-in and exclusive of Check in staging', () => {
     const stores = [
         {
             checkoutOrigin: 'https://checkout.example',

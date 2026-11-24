@@ -13,10 +13,9 @@ export function localStorefrontUrl(path: string, fallback: string): string {
 }
 
 export function showLocalCheckoutNotice(container: Element): void {
-    if (
-        getWarehouseDeployment().mode !== 'development' ||
-        document.getElementById('warehouse-local-notice')
-    )
+    const deployment = getWarehouseDeployment();
+
+    if (deployment.mode !== 'development' || document.getElementById('warehouse-local-notice'))
         return;
 
     const notice = document.createElement('div');
@@ -25,7 +24,19 @@ export function showLocalCheckoutNotice(container: Element): void {
     notice.id = 'warehouse-local-notice';
     notice.style.cssText =
         'padding:12px 24px;background:#fff4cc;color:#302500;font:14px sans-serif';
-    notice.textContent = 'Local development: order submission disabled. ';
+
+    const store = deployment.stores.find(
+        (entry) => entry.checkoutOrigin === window.location.origin,
+    );
+
+    const methods = [
+        ...(store?.allowCheckTest ? ['Check'] : []),
+        ...(store?.allowTestProvider ? ['the Test payment provider with a sandbox card'] : []),
+    ];
+
+    notice.textContent = methods.length
+        ? `Local development: use ${methods.join(' or ')}. `
+        : 'Local development: order submission disabled. ';
     link.href = localStorefrontUrl('/cart/', '');
     link.textContent = 'Return to local cart';
     notice.appendChild(link);

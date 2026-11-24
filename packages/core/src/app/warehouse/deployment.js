@@ -62,18 +62,18 @@ function readWarehouseDeployment(mode = 'off', encodedStores = '[]') {
         if (!Array.isArray(input) || !input.length) throw new Error('Missing stores');
 
         const stores = input.map((store) => {
-            if (
-                store.allowCheckTest !== undefined &&
-                (typeof store.allowCheckTest !== 'boolean' || mode !== 'staging')
-            )
-                throw new Error('Check test requires explicit staging configuration');
+            for (const optIn of [store.allowTestProvider, store.allowCheckTest]) {
+                if (
+                    optIn !== undefined &&
+                    (typeof optIn !== 'boolean' ||
+                        (mode === 'development' &&
+                            optIn &&
+                            new URL(store.validationEndpoint).origin !== 'http://localhost:3000'))
+                )
+                    throw new Error('Invalid test payment opt-in or local validation endpoint');
+            }
 
-            if (
-                store.allowTestProvider !== undefined &&
-                (typeof store.allowTestProvider !== 'boolean' || mode !== 'staging')
-            )
-                throw new Error('Test provider requires explicit staging configuration');
-            if (store.allowTestProvider === true && store.allowCheckTest === true)
+            if (mode === 'staging' && store.allowTestProvider && store.allowCheckTest)
                 throw new Error('Choose one test payment opt-in');
 
             return {

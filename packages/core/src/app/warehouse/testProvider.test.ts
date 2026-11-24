@@ -26,6 +26,13 @@ let choice: {
     usesStoredInstrument: boolean;
     shouldSaveInstrument: boolean;
 };
+const checkGrant = () => ({
+    version: 1 as const,
+    methodId: 'cheque' as const,
+    token: 'signed-local-check',
+    expiresAt: Math.floor(Date.now() / 1000) + 600,
+});
+let offerCheck = false;
 let granted = true;
 let claimed = false;
 let claimCalls = 0;
@@ -100,6 +107,7 @@ beforeEach(() => {
         usesStoredInstrument: false,
         shouldSaveInstrument: false,
     };
+    offerCheck = false;
     granted = true;
     claimed = false;
     claimCalls = 0;
@@ -110,7 +118,7 @@ beforeEach(() => {
     global.fetch = jest.fn(async (_url, options) => {
         const body = JSON.parse(options?.body as string);
 
-        if (body.testProvider) {
+        if (body.testProvider || body.checkTest) {
             claimCalls++;
             if (claimed)
                 return {
@@ -131,6 +139,8 @@ beforeEach(() => {
                 warehouse: config.warehouse,
                 submission: body.submission,
                 ...(granted ? { testProviderAuthorization: grant() } : {}),
+                ...(offerCheck ? { checkTestAuthorization: checkGrant() } : {}),
+                ...(body.checkTest ? { checkTestClaimed: true } : {}),
                 ...(body.testProvider ? { testProviderClaimed: true } : {}),
             }),
         } as Response;
@@ -205,6 +215,46 @@ it.each([
     ).toThrow('Invalid Test payment provider cart limit');
     expect(canSubmitTestProvider()).toBe(false);
 });
+
+it.each(['cheque', 'bigpaypay'])(
+    'uses the selected local method for the only claim: %s',
+    async (methodId) => {
+        deployment.mockReturnValue({
+            mode: 'development',
+            stores: [
+                {
+                    checkoutOrigin: window.location.origin,
+                    validationEndpoint: config.validation.endpoint,
+                    allowTestProvider: true,
+                    allowCheckTest: true,
+                },
+            ],
+        });
+        offerCheck = true;
+        acceptCheckTestAuthorization(checkGrant());
+        choice.methodId = choice.selectedMethodId = methodId;
+
+        await expect(submit()).resolves.toBe('simulated-order');
+        expect(claimCalls).toBe(1);
+        expect(execute).toHaveBeenCalledTimes(1);
+
+        const calls = jest
+            .mocked(global.fetch)
+            .mock.calls.map(([, options]) => JSON.parse(options?.body as string));
+        const submitted = calls.find((body) => body.checkTest || body.testProvider);
+
+        expect(methodId === 'cheque' ? submitted.checkTest : submitted.testProvider).toMatchObject({
+            methodId,
+            gatewayId: null,
+            token: methodId === 'cheque' ? checkGrant().token : grant().token,
+        });
+        expect(
+            methodId === 'cheque' ? submitted.testProvider : submitted.checkTest,
+        ).toBeUndefined();
+        await expect(submit()).rejects.toThrow('Do not submit again');
+        expect(claimCalls).toBe(1);
+    },
+);
 
 it('default build remains preview-only even with a server grant', async () => {
     deployment.mockReturnValue({
@@ -288,13 +338,17 @@ it.each(['complete', 'reject'])(
     },
 );
 
-it('an explicit grant admits only one simulated native Test payment provider execution', async () => {
-    await expect(submit()).resolves.toBe('simulated-order');
-    expect(claimCalls).toBe(1);
-    expect(execute).toHaveBeenCalledTimes(1);
-    await expect(submit()).rejects.toThrow('Do not submit again');
-    expect(execute).toHaveBeenCalledTimes(1);
-});
+it.each(['development', 'staging'])(
+    'an explicit grant admits only one simulated native Test payment provider execution in %s',
+    async (mode) => {
+        deployment.mockReturnValue({ ...getWarehouseDeployment(), mode });
+        await expect(submit()).resolves.toBe('simulated-order');
+        expect(claimCalls).toBe(1);
+        expect(execute).toHaveBeenCalledTimes(1);
+        await expect(submit()).rejects.toThrow('Do not submit again');
+        expect(execute).toHaveBeenCalledTimes(1);
+    },
+);
 it.each(['card', 'gateway', 'custom', 'override'])('rejects %s before execution', async (kind) => {
     if (kind === 'card') choice.selectedMethodId = 'cheque';
     if (kind === 'gateway') choice.gatewayId = 'gateway';

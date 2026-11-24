@@ -86,7 +86,7 @@ Copyright (C) 2019-Present BigCommerce Inc. All rights reserved.
 
 ### Warehouse Test payment provider rehearsal
 
-The standalone checkout supports a separate, default-off `allowTestProvider` boolean on a `WAREHOUSE_CHECKOUT_STORES` entry, only in `WAREHOUSE_CHECKOUT_MODE=staging`. It is mutually exclusive with `allowCheckTest`. No store identifiers or credentials are embedded in this implementation, and no environment value is installed automatically.
+The standalone checkout supports a default-off `allowTestProvider` boolean on each `WAREHOUSE_CHECKOUT_STORES` entry. Staging accepts an HTTPS validator. Development accepts this opt-in only in a development build with the validator at `http://localhost:3000`. Restart `npm run dev` after changing the local checkout mapping. Staging accepts one payment opt-in at a time. Local development can also enable `allowCheckTest` for native offline Check when the local validator authorizes it.
 
 An independent backend must return the authenticated `testProviderAuthorization` contract (`version:1`, `methodId:"bigpaypay"`, `testMode:true`, signed `token`, short-lived `expiresAt`) from the configured validator. The native form accepts only the exact Test payment provider, without a gateway override, stored instrument, save-instrument selection, or custom submit callback. It sends only payment identity and instrument-use booleans with the normal warehouse snapshot to claim a single attempt; it never sends card data to the warehouse backend. The response must explicitly acknowledge `testProviderClaimed:true` and the same token before the SDK executor runs.
 

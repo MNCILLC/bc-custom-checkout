@@ -62,7 +62,7 @@ export function checkTestAuthorization(): CheckTestAuthorization | undefined {
     const deployment = getWarehouseDeployment();
 
     if (
-        deployment.mode !== 'staging' ||
+        (deployment.mode !== 'staging' && deployment.mode !== 'development') ||
         !deployment.stores.find((store) => store.checkoutOrigin === window.location.origin)
             ?.allowCheckTest ||
         !config ||
@@ -91,7 +91,9 @@ export function assertCheckTestPayment(payment: CheckTestPayment | undefined) {
         payment.methodId !== 'cheque' ||
         payment.selectedMethodId !== 'cheque' ||
         payment.gatewayId ||
-        payment.customSubmit
+        payment.customSubmit ||
+        payment.usesStoredInstrument ||
+        payment.shouldSaveInstrument
     )
         throw new Error('Only the native Check payment method is authorized for this test.');
 }

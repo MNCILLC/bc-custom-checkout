@@ -87,7 +87,7 @@ function testProviderOptedIn() {
     const deployment = getWarehouseDeployment();
 
     return (
-        deployment.mode === 'staging' &&
+        (deployment.mode === 'staging' || deployment.mode === 'development') &&
         deployment.stores.find((store) => store.checkoutOrigin === window.location.origin)
             ?.allowTestProvider
     );
