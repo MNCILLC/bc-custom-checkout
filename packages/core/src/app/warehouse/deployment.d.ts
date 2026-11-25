@@ -6,6 +6,7 @@ export interface WarehouseDeployment {
         currentCustomerClientId?: string;
         handoffEndpoint?: string;
         allowCheckTest?: boolean;
+        allowHostedSandboxCheck?: boolean;
         allowTestProvider?: boolean;
         validationEndpoint: string;
         initializationEndpoint?: string;

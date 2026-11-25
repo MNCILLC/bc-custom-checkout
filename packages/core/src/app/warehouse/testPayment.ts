@@ -19,7 +19,18 @@ export function canSubmitTestPayment() {
     const check = canSubmitCheckTest();
     const card = canSubmitTestProvider();
 
-    if (check && card) return getWarehouseDeployment().mode === 'development';
+    if (check && card) {
+        const deployment = getWarehouseDeployment();
+
+        return (
+            deployment.mode === 'development' ||
+            deployment.stores.some(
+                (store) =>
+                    store.checkoutOrigin === window.location.origin &&
+                    store.allowHostedSandboxCheck,
+            )
+        );
+    }
 
     return check || card;
 }

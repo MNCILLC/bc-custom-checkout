@@ -258,6 +258,74 @@ it.each(['cheque', 'bigpaypay'])(
     },
 );
 
+it.each(['cheque', 'bigpaypay'])(
+    'sends the selected hosted method and pickup snapshot: %s',
+    async (methodId) => {
+        deployment.mockReturnValue({
+            mode: 'staging',
+            stores: [
+                {
+                    checkoutOrigin: window.location.origin,
+                    validationEndpoint: config.validation.endpoint,
+                    allowTestProvider: true,
+                    allowCheckTest: true,
+                    allowHostedSandboxCheck: true,
+                },
+            ],
+        });
+        offerCheck = true;
+        acceptCheckTestAuthorization(checkGrant());
+        choice.methodId = choice.selectedMethodId = methodId;
+
+        const fetchMock = jest.mocked(global.fetch);
+        const validate = fetchMock.getMockImplementation();
+        const intercepted: unknown[] = [];
+
+        if (!validate) throw new Error('Missing fixture validator');
+        fetchMock.mockImplementation(async (url, options) => {
+            const body = JSON.parse(options?.body as string);
+
+            if (!body.checkTest && !body.testProvider) return validate(url, options);
+            intercepted.push(body);
+            throw new Error('Intercepted before claim handling');
+        });
+        await expect(submit()).rejects.toThrow('Do not submit again');
+        expect(intercepted).toEqual([
+            {
+                cartId: config.cartId,
+                revision: config.validation.revision,
+                submission: {
+                    grandTotal: 50,
+                    items: [{ id: 'item', productId: 1, variantId: 2, quantity: 1 }],
+                    consignments: [
+                        {
+                            id: 'c',
+                            lineItemIds: ['item'],
+                            pickupMethodId: 12,
+                            shippingOptionId: null,
+                        },
+                    ],
+                },
+                ...(methodId === 'cheque'
+                    ? {
+                          checkTest: { methodId, token: checkGrant().token, gatewayId: null },
+                      }
+                    : {
+                          testProvider: {
+                              methodId,
+                              token: grant().token,
+                              gatewayId: null,
+                              usesStoredInstrument: false,
+                              shouldSaveInstrument: false,
+                          },
+                      }),
+            },
+        ]);
+        expect(claimCalls).toBe(0);
+        expect(execute).not.toHaveBeenCalled();
+    },
+);
+
 it('shows recovery before checking a different payment method after a lost reply', async () => {
     uncertain = true;
     await expect(submit()).rejects.toThrow('Do not submit again');

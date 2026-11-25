@@ -187,7 +187,35 @@ it('Check-only execution needs an explicit per-store staging opt-in', () => {
     ).toThrow();
 });
 
-it('Test provider is separately opt-in and exclusive of Check in staging', () => {
+it('requires an explicit Sandbox Cowboy opt-in to combine both methods in staging', () => {
+    const sandbox = {
+        checkoutOrigin: 'https://sandboxcatalystcheckout.mncillc.com',
+        validationEndpoint: 'https://sandboxcatalyst.mncillc.com/api/warehouse/validate',
+        allowCheckTest: true,
+        allowTestProvider: true,
+        allowHostedSandboxCheck: true,
+    };
+
+    expect(readWarehouseDeployment('staging', JSON.stringify([sandbox, stores[0]])).stores).toEqual(
+        [sandbox, stores[0]],
+    );
+
+    for (const change of [
+        { allowHostedSandboxCheck: undefined },
+        { allowHostedSandboxCheck: false },
+        { allowHostedSandboxCheck: 'true' },
+        { allowTestProvider: false },
+        { allowCheckTest: false },
+        { checkoutOrigin: stores[0].checkoutOrigin },
+        { validationEndpoint: stores[0].validationEndpoint },
+    ]) {
+        expect(() =>
+            readWarehouseDeployment('staging', JSON.stringify([{ ...sandbox, ...change }])),
+        ).toThrow();
+    }
+});
+
+it('allows an individual staging payment opt-in independently', () => {
     const stores = [
         {
             checkoutOrigin: 'https://checkout.example',

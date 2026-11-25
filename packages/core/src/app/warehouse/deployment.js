@@ -73,11 +73,36 @@ function readWarehouseDeployment(mode = 'off', encodedStores = '[]') {
                     throw new Error('Invalid test payment opt-in or local validation endpoint');
             }
 
-            if (mode === 'staging' && store.allowTestProvider && store.allowCheckTest)
+            if (
+                store.allowHostedSandboxCheck !== undefined &&
+                typeof store.allowHostedSandboxCheck !== 'boolean'
+            )
+                throw new Error('Invalid hosted Sandbox Cowboy payment opt-in');
+            if (
+                store.allowHostedSandboxCheck &&
+                (mode !== 'staging' ||
+                    !store.allowCheckTest ||
+                    !store.allowTestProvider ||
+                    store.checkoutOrigin !== 'https://sandboxcatalystcheckout.mncillc.com' ||
+                    store.validationEndpoint !==
+                        'https://sandboxcatalyst.mncillc.com/api/warehouse/validate')
+            )
+                throw new Error(
+                    'Shared hosted test payments require the Sandbox Cowboy checkout and validator',
+                );
+            if (
+                mode === 'staging' &&
+                store.allowTestProvider &&
+                store.allowCheckTest &&
+                !store.allowHostedSandboxCheck
+            )
                 throw new Error('Choose one test payment opt-in');
 
             return {
                 ...(store.allowTestProvider === true ? { allowTestProvider: true } : {}),
+                ...(store.allowHostedSandboxCheck === true
+                    ? { allowHostedSandboxCheck: true }
+                    : {}),
                 ...oneClickSettings(store, mode),
                 ...(store.allowCheckTest === true ? { allowCheckTest: true } : {}),
                 checkoutOrigin: httpsUrl(store.checkoutOrigin, true),
