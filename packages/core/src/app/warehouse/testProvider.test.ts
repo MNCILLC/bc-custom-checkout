@@ -11,6 +11,7 @@ import { submissionNeedsReview } from './recovery';
 import { submitWithWarehouseValidation } from './submission';
 import { beginTestPaymentAttempt } from './testPayment';
 import { acceptTestProviderAuthorization, canSubmitTestProvider } from './testProvider';
+import { validateCurrentWarehouse } from './validation';
 
 jest.mock('./deployment', () => ({ getWarehouseDeployment: jest.fn() }));
 
@@ -630,4 +631,97 @@ it('keeps recovery locked when the payment executor catches its own SDK failure'
     await expect(submit()).rejects.toThrow('Do not submit again');
     expect(execute).toHaveBeenCalledTimes(1);
     expect(claimCalls).toBe(1);
+});
+
+describe('method-independent payment contract', () => {
+    const offer = (methodId: string) => ({
+        ...(methodId === 'cheque' ? checkGrant() : grant()),
+        gatewayId: null,
+    });
+    let available: string[];
+    let confirmClaim: boolean;
+    const claims: Array<{
+        methodId: string;
+        token: string;
+        gatewayId: null;
+        usesStoredInstrument: false;
+        shouldSaveInstrument: false;
+    }> = [];
+
+    beforeEach(() => {
+        deployment.mockReturnValue({
+            mode: 'development',
+            stores: [
+                {
+                    checkoutOrigin: window.location.origin,
+                    validationEndpoint: config.validation.endpoint,
+                    allowCheckTest: true,
+                    allowTestProvider: true,
+                },
+            ],
+        });
+        available = ['cheque', 'bigpaypay'];
+        claims.length = 0;
+        confirmClaim = true;
+        service.loadPaymentMethods = jest.fn().mockImplementation(async () => ({
+            data: { getPaymentMethods: () => available.map((id) => ({ id })) },
+        }));
+        global.fetch = jest.fn(async (_url, options) => {
+            const body = JSON.parse(options?.body as string);
+
+            expect((options?.headers as Record<string, string>).Accept).toContain(
+                'application/vnd.warehouse.payment.v1+json',
+            );
+            expect(body.checkTest).toBeUndefined();
+            expect(body.testProvider).toBeUndefined();
+            if (body.payment) claims.push(body.payment);
+
+            return {
+                ok: true,
+                json: async () => ({
+                    version: 1,
+                    cartId: config.cartId,
+                    revision: config.validation.revision,
+                    warehouse: config.warehouse,
+                    submission: body.submission,
+                    paymentAuthorizations: body.payment
+                        ? [offer(body.payment.methodId)]
+                        : [offer('cheque'), offer('bigpaypay')],
+                    ...(body.payment ? { paymentClaimed: confirmClaim } : {}),
+                }),
+            } as Response;
+        });
+    });
+    it.each(['cheque', 'bigpaypay'])(
+        'claims %s using the same request and acknowledgement',
+        async (methodId) => {
+            await validateCurrentWarehouse();
+            choice.methodId = choice.selectedMethodId = methodId;
+            await expect(submit()).resolves.toBe('simulated-order');
+            expect(claims).toEqual([
+                {
+                    methodId,
+                    token: offer(methodId).token,
+                    gatewayId: null,
+                    usesStoredInstrument: false,
+                    shouldSaveInstrument: false,
+                },
+            ]);
+            expect(execute).toHaveBeenCalledTimes(1);
+        },
+    );
+    it('rejects a granted method that has disappeared from this SDK checkout', async () => {
+        await validateCurrentWarehouse();
+        available = ['cheque'];
+        await expect(submit()).rejects.toThrow('no longer available');
+        expect(claims).toHaveLength(0);
+        expect(execute).not.toHaveBeenCalled();
+    });
+    it('requires a positive acknowledgement before executing', async () => {
+        await validateCurrentWarehouse();
+        confirmClaim = false;
+        await expect(submit()).rejects.toThrow('Do not submit again');
+        expect(claims).toHaveLength(1);
+        expect(execute).not.toHaveBeenCalled();
+    });
 });

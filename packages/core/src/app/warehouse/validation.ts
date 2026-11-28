@@ -1,6 +1,11 @@
 import { acceptCheckTestAuthorization, type CheckTestAuthorization } from './checkTest';
 import { getWarehouseCheckout, validateWarehouseCheckout } from './config';
 import { WarehouseInventoryConflict } from './initialization';
+import {
+    acceptPaymentGrants,
+    type PaymentGrant,
+    warehousePaymentMediaType,
+} from './paymentAuthorization';
 import { RECOVERY_MESSAGE, requireSubmissionReview } from './recovery';
 import { type SubmissionSnapshot } from './submission';
 import { warehouseSubmissionInProgress } from './submissionState';
@@ -39,7 +44,7 @@ export async function validateCurrentWarehouse(
     submission?: SubmissionSnapshot,
     attempt?: PaymentAttempt,
 ): Promise<void> {
-    const { checkTest, testProvider } = attempt ?? {};
+    const { checkTest, testProvider, payment } = attempt ?? {};
 
     const current = getWarehouseCheckout();
 
@@ -69,6 +74,7 @@ export async function validateCurrentWarehouse(
             credentials: 'omit',
             cache: 'no-store',
             headers: {
+                Accept: `${warehousePaymentMediaType}, application/json`,
                 Authorization: `Bearer ${config.validation.token}`,
                 'Content-Type': 'application/json',
             },
@@ -92,6 +98,8 @@ export async function validateCurrentWarehouse(
             submission?: SubmissionSnapshot;
             checkTestAuthorization?: CheckTestAuthorization;
             checkTestClaimed?: boolean;
+            paymentAuthorizations?: PaymentGrant[];
+            paymentClaimed?: boolean;
             testProviderAuthorization?: TestProviderAuthorization;
             testProviderClaimed?: boolean;
             testProviderIneligibility?: TestProviderIneligibility;
@@ -110,6 +118,7 @@ export async function validateCurrentWarehouse(
             getWarehouseCheckout()?.validation.endpoint === config.validation.endpoint
         ) {
             requireSubmissionReview(config);
+            acceptPaymentGrants(undefined);
             acceptCheckTestAuthorization(undefined);
             acceptTestProviderAuthorization(undefined);
             throw new Error(RECOVERY_MESSAGE);
@@ -131,6 +140,15 @@ export async function validateCurrentWarehouse(
                 result.message || 'Warehouse verification failed. Return to your cart.',
             );
         if (
+            (payment &&
+                (result.paymentClaimed !== true ||
+                    result.paymentAuthorizations?.length !== 1 ||
+                    !result.paymentAuthorizations.some(
+                        (g) =>
+                            g.methodId === payment.methodId &&
+                            g.gatewayId === payment.gatewayId &&
+                            g.token === payment.token,
+                    ))) ||
             (checkTest &&
                 (result.checkTestClaimed !== true ||
                     result.checkTestAuthorization?.token !== checkTest.token)) ||
@@ -155,13 +173,14 @@ export async function validateCurrentWarehouse(
         validateWarehouseCheckout(verified, config.cartId);
         // Fulfillment policy is supplied by the authenticated server response.
         window.warehouseCheckout = verified;
+        acceptPaymentGrants(result.paymentAuthorizations);
         acceptCheckTestAuthorization(result.checkTestAuthorization);
         acceptTestProviderAuthorization(
             result.testProviderAuthorization,
             result.testProviderIneligibility,
         );
     } catch (error) {
-        if (checkTest || testProvider) {
+        if (attempt) {
             requireSubmissionReview(config);
             throw new Error(RECOVERY_MESSAGE);
         }

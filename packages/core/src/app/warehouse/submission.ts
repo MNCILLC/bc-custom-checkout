@@ -1,8 +1,8 @@
 import { type CheckoutService } from '@bigcommerce/checkout-sdk';
 
-import { type CheckTestPayment } from './checkTest';
 import { getWarehouseCheckout, warehouseConsignmentsValid } from './config';
 import { assertFreightReady, freightFingerprint } from './freight';
+import { paymentGrants, type WarehousePaymentSelection } from './paymentAuthorization';
 import { assertNoSubmissionRecovery, RECOVERY_MESSAGE, submissionNeedsReview } from './recovery';
 import { createSubmissionGuard } from './submissionGuard';
 import { backgroundWarehouseChecks, setWarehouseSubmissionInProgress } from './submissionState';
@@ -56,7 +56,7 @@ export async function submitWithWarehouseValidation<T>(
     service: CheckoutService,
     prepare: () => Promise<boolean>,
     execute: () => Promise<T>,
-    payment?: () => CheckTestPayment,
+    payment?: () => WarehousePaymentSelection,
     retainTestProviderFields?: (cartId: string) => () => void,
 ): Promise<T | undefined> {
     const config = getWarehouseCheckout();
@@ -133,11 +133,21 @@ export async function submitWithWarehouseValidation<T>(
 
                     assertTestPayment(choice);
 
-                    const methods = service.getState().data.getPaymentMethods();
+                    // The normal policy also checks the current method list for this cart in the SDK.
+                    const state = paymentGrants()
+                        ? await service.loadPaymentMethods()
+                        : service.getState();
+
+                    if (fingerprint() !== reviewed)
+                        throw new Error('Checkout changed. Review your checkout before retrying.');
+
+                    const methods = state.data.getPaymentMethods();
 
                     if (
                         !methods?.some(
-                            (method) => method.id === choice?.methodId && !method.gateway,
+                            (method) =>
+                                method.id === choice?.methodId &&
+                                (method.gateway ?? null) === (choice?.gatewayId ?? null),
                         )
                     )
                         throw new Error(

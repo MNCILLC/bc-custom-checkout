@@ -3,10 +3,15 @@ import {
     canSubmitCheckTest,
     checkTestAuthorization,
     type CheckTestClaim,
-    type CheckTestPayment,
 } from './checkTest';
 import { getWarehouseCheckout } from './config';
 import { getWarehouseDeployment } from './deployment';
+import {
+    type PaymentClaim,
+    paymentGrants,
+    selectedPaymentGrant,
+    type WarehousePaymentSelection,
+} from './paymentAuthorization';
 import { markSubmissionAttempt } from './recovery';
 import {
     assertTestProviderPayment,
@@ -16,6 +21,10 @@ import {
 } from './testProvider';
 
 export function canSubmitTestPayment() {
+    const grants = paymentGrants();
+
+    if (grants) return grants.length > 0;
+
     const check = canSubmitCheckTest();
     const card = canSubmitTestProvider();
 
@@ -35,7 +44,15 @@ export function canSubmitTestPayment() {
     return check || card;
 }
 
-export function assertTestPayment(payment: CheckTestPayment | undefined) {
+export function assertTestPayment(payment: WarehousePaymentSelection | undefined) {
+    const grants = paymentGrants();
+
+    if (grants) {
+        selectedPaymentGrant(grants, payment);
+
+        return;
+    }
+
     if (!canSubmitTestPayment())
         throw new Error('One explicit test payment authorization is required.');
 
@@ -49,13 +66,34 @@ export function assertTestPayment(payment: CheckTestPayment | undefined) {
 }
 
 export type PaymentAttempt =
-    | { checkTest: CheckTestClaim; testProvider?: never }
-    | { testProvider: TestProviderClaim; checkTest?: never };
+    | { payment: PaymentClaim; checkTest?: never; testProvider?: never }
+    | { checkTest: CheckTestClaim; testProvider?: never; payment?: never }
+    | { testProvider: TestProviderClaim; checkTest?: never; payment?: never };
 
-export function beginTestPaymentAttempt(payment: CheckTestPayment | undefined): PaymentAttempt {
+export function beginTestPaymentAttempt(
+    payment: WarehousePaymentSelection | undefined,
+): PaymentAttempt {
     assertTestPayment(payment);
 
     const config = getWarehouseCheckout();
+    const grants = paymentGrants();
+
+    if (config && grants) {
+        const { methodId, gatewayId, token } = selectedPaymentGrant(grants, payment);
+
+        markSubmissionAttempt(config);
+
+        return {
+            payment: {
+                methodId,
+                gatewayId,
+                token,
+                usesStoredInstrument: false,
+                shouldSaveInstrument: false,
+            },
+        };
+    }
+
     const grant =
         payment?.methodId === 'cheque' ? checkTestAuthorization() : testProviderAuthorization();
 

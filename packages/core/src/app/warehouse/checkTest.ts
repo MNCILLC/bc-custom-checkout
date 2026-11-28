@@ -1,5 +1,6 @@
 import { getWarehouseCheckout } from './config';
 import { getWarehouseDeployment } from './deployment';
+import type { WarehousePaymentSelection } from './paymentAuthorization';
 
 export interface CheckTestAuthorization {
     version: 1;
@@ -12,14 +13,7 @@ export interface CheckTestClaim {
     methodId: string;
     gatewayId: string | null;
 }
-export interface CheckTestPayment {
-    methodId?: string;
-    gatewayId?: string;
-    selectedMethodId?: string;
-    customSubmit: boolean;
-    usesStoredInstrument?: boolean;
-    shouldSaveInstrument?: boolean;
-}
+export type CheckTestPayment = WarehousePaymentSelection;
 
 let authorization:
     | { grant: CheckTestAuthorization; cartId: string; revision: string; credential: string }

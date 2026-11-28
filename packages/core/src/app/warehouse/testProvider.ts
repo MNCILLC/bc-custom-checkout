@@ -1,5 +1,6 @@
 import { getWarehouseCheckout, type WarehouseCheckoutConfig } from './config';
 import { getWarehouseDeployment } from './deployment';
+import type { WarehousePaymentSelection } from './paymentAuthorization';
 
 export interface TestProviderAuthorization {
     version: 1;
@@ -15,14 +16,7 @@ export interface TestProviderClaim {
     usesStoredInstrument: false;
     shouldSaveInstrument: false;
 }
-export interface TestProviderPayment {
-    methodId?: string;
-    gatewayId?: string;
-    selectedMethodId?: string;
-    customSubmit: boolean;
-    usesStoredInstrument?: boolean;
-    shouldSaveInstrument?: boolean;
-}
+export type TestProviderPayment = WarehousePaymentSelection;
 
 let authorization:
     | { grant: TestProviderAuthorization; cartId: string; revision: string; credential: string }
