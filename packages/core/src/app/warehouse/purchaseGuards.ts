@@ -2,6 +2,7 @@ import { setPaymentProviderGuard } from '@bigcommerce/checkout/payment-integrati
 
 import { getWarehouseCheckout, validateWarehouseCheckout } from './config';
 import { getWarehouseDeployment } from './deployment';
+import { paymentGrants } from './paymentAuthorization';
 import { assertNoSubmissionRecovery, submissionNeedsReview } from './recovery';
 import { canSubmitTestPayment } from './testPayment';
 
@@ -11,7 +12,7 @@ export function installPurchaseGuards() {
     if (purchaseGuardsInstalled) return;
     purchaseGuardsInstalled = true;
 
-    const removeProviderGuard = setPaymentProviderGuard((methodId, flow) => {
+    const removeProviderGuard = setPaymentProviderGuard((methodId, flow, gatewayId) => {
         if (getWarehouseDeployment().mode === 'off' && !window.warehouseCheckout) return;
 
         const config = getWarehouseCheckout();
@@ -20,13 +21,26 @@ export function installPurchaseGuards() {
         validateWarehouseCheckout(config, config.cartId);
         assertNoSubmissionRecovery();
 
-        // These native forms may render for blocked validation. Submission still requires
-        // the existing cart-scoped authorization, server claim and final warehouse check.
-        // A test grant never authorizes a real provider or an express wallet.
-        if (flow === 'express' || !['bigpaypay', 'cheque'].includes(methodId || ''))
-            throw new Error(
-                'This payment provider is unavailable while warehouse purchasing is blocked.',
-            );
+        if (flow === 'payment') {
+            // The two native sandbox methods can render in preview-only checkout.
+            if (gatewayId === undefined && (methodId === 'bigpaypay' || methodId === 'cheque')) {
+                return;
+            }
+
+            // Gateway-bound grants are restricted to the configured local test card.
+            if (
+                gatewayId &&
+                paymentGrants()?.some(
+                    (grant) => grant.methodId === methodId && grant.gatewayId === gatewayId,
+                )
+            ) {
+                return;
+            }
+        }
+
+        throw new Error(
+            'This payment provider is unavailable while warehouse purchasing is blocked.',
+        );
     });
 
     const blocked = () => {

@@ -68,7 +68,7 @@ export const getFilteredPaymentMethodsWithDefault = ({
     });
 
     filteredMethods = filteredMethods.filter((method) =>
-        isPaymentProviderAllowed(method.id, 'payment'),
+        isPaymentProviderAllowed(method.id, 'payment', method.gateway ?? undefined),
     );
 
     const shouldGroupPaymentMethodsByPrefix = filteredMethods.some((method) =>

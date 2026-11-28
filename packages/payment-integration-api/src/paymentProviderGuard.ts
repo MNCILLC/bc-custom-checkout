@@ -2,6 +2,7 @@ export type PaymentProviderFlow = 'payment' | 'express';
 export type PaymentProviderGuard = (
     methodId: string | undefined,
     flow: PaymentProviderFlow,
+    gatewayId?: string,
 ) => void;
 
 let guard: PaymentProviderGuard | undefined;
@@ -21,16 +22,18 @@ export function setPaymentProviderGuard(next: PaymentProviderGuard): () => void 
 export function assertPaymentProviderAllowed(
     methodId: string | undefined,
     flow: PaymentProviderFlow,
+    gatewayId?: string,
 ): void {
-    guard?.(methodId, flow);
+    guard?.(methodId, flow, gatewayId);
 }
 
 export function isPaymentProviderAllowed(
     methodId: string | undefined,
     flow: PaymentProviderFlow,
+    gatewayId?: string,
 ): boolean {
     try {
-        assertPaymentProviderAllowed(methodId, flow);
+        assertPaymentProviderAllowed(methodId, flow, gatewayId);
 
         return true;
     } catch {

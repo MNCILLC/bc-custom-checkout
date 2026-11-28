@@ -22,6 +22,7 @@ import WalletComponent from '../../../../bigcommerce-payments-integration/src/co
 
 import { type WarehouseCheckoutConfig } from './config';
 import * as deployment from './deployment';
+import { acceptPaymentGrants } from './paymentAuthorization';
 import { installPurchaseGuards } from './purchaseGuards';
 import { requireSubmissionReview } from './recovery';
 
@@ -107,6 +108,48 @@ it.each(['missing', 'expired', 'recovery'])(
         expect(() => assertPaymentProviderAllowed('bigpaypay', 'payment')).toThrow();
     },
 );
+it('shows only the granted local card and gateway on the normal payment form', () => {
+    const pair = { methodId: 'fixture-card', gatewayId: 'fixture-gateway' };
+    const grant = {
+        ...pair,
+        version: 1 as const,
+        testMode: true,
+        token: 'fixture-grant',
+        expiresAt: 9999999999,
+    };
+    const store = {
+        checkoutOrigin: window.location.origin,
+        validationEndpoint: 'https://validator.example/validate',
+        allowTestProvider: true,
+        localCardPreview: pair,
+    };
+    const configure = jest.mocked(deployment.getWarehouseDeployment);
+    const allowed = () => isPaymentProviderAllowed(pair.methodId, 'payment', pair.gatewayId);
+
+    configure.mockReturnValue({ mode: 'development', stores: [store] });
+
+    try {
+        expect(allowed()).toBe(false);
+        acceptPaymentGrants([grant]);
+        expect(allowed()).toBe(true);
+        expect(isPaymentProviderAllowed(pair.methodId, 'payment')).toBe(false);
+        expect(isPaymentProviderAllowed(pair.methodId, 'payment', 'other-gateway')).toBe(false);
+        expect(isPaymentProviderAllowed('other-card', 'payment', pair.gatewayId)).toBe(false);
+        expect(isPaymentProviderAllowed(pair.methodId, 'express', pair.gatewayId)).toBe(false);
+        configure.mockReturnValue({ mode: 'staging', stores: [store] });
+        expect(allowed()).toBe(false);
+        configure.mockReturnValue({ mode: 'development', stores: [store] });
+        acceptPaymentGrants([{ ...grant, gatewayId: 'other-gateway' }]);
+        expect(isPaymentProviderAllowed(pair.methodId, 'payment', 'other-gateway')).toBe(false);
+        acceptPaymentGrants([]);
+        expect(allowed()).toBe(false);
+        acceptPaymentGrants([grant]);
+        requireSubmissionReview();
+        expect(allowed()).toBe(false);
+    } finally {
+        acceptPaymentGrants(undefined);
+    }
+});
 it('preserves ordinary checkout with no warehouse handoff', () => {
     ordinary();
     expect(() => assertPaymentProviderAllowed('bigcommerce_payments', 'payment')).not.toThrow();
