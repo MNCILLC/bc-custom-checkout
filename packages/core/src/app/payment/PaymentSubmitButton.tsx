@@ -3,9 +3,17 @@ import React, { type FunctionComponent, memo, useSyncExternalStore } from 'react
 
 import { useThemeContext } from '@bigcommerce/checkout/contexts';
 import { TranslatedString } from '@bigcommerce/checkout/locale';
-import { Button, ButtonSize, ButtonVariant, IconBolt } from '@bigcommerce/checkout/ui';
+import {
+    Alert,
+    AlertType,
+    Button,
+    ButtonSize,
+    ButtonVariant,
+    IconBolt,
+} from '@bigcommerce/checkout/ui';
 
 import { withCheckout } from '../checkout';
+import { paymentMethodWarning, subscribePaymentGrants } from '../warehouse/paymentAuthorization';
 import { getCartLimitMessage, subscribeTestProviderEligibility } from '../warehouse/testProvider';
 
 import { PaymentMethodId, PaymentMethodType } from './paymentMethod';
@@ -158,38 +166,62 @@ const PaymentSubmitButton: FunctionComponent<
         subscribeTestProviderEligibility,
         getCartLimitMessage,
     );
+    const methodWarning = useSyncExternalStore(subscribePaymentGrants, () =>
+        isPaymentDataRequired ? paymentMethodWarning(methodId, methodGateway) : undefined,
+    );
+    const showMethodWarning = !!methodWarning && !cartLimitMessage;
+    const descriptionId = cartLimitMessage
+        ? 'warehouse-line-item-limit'
+        : showMethodWarning
+          ? 'warehouse-payment-method-warning'
+          : undefined;
 
     return (
-        <Button
-            aria-describedby={cartLimitMessage ? 'warehouse-line-item-limit' : undefined}
-            className={classNames(
-                {
-                    [`payment-submit-button-${methodId}`]: providersWithCustomClasses.includes(
-                        methodId as PaymentMethodId,
-                    ),
-                },
-                'sub-header',
+        <>
+            {showMethodWarning && (
+                <Alert type={AlertType.Warning}>
+                    <span id="warehouse-payment-method-warning">
+                        <TranslatedString id={methodWarning} />
+                    </span>
+                </Alert>
             )}
-            data-test="payment-submit-button"
-            disabled={isInitializing || isSubmitting || isDisabled || !!cartLimitMessage}
-            id="checkout-payment-continue"
-            isFullWidth
-            isLoading={isSubmitting}
-            size={ButtonSize.Large}
-            type="submit"
-            variant={enhancedThemeV1 ? ButtonVariant.Primary : ButtonVariant.Action}
-        >
-            <PaymentSubmitButtonText
-                brandName={brandName}
-                initialisationStrategyType={initialisationStrategyType}
-                isComplete={isComplete}
-                isPaymentDataRequired={isPaymentDataRequired}
-                methodGateway={methodGateway}
-                methodId={methodId}
-                methodName={methodName}
-                methodType={methodType}
-            />
-        </Button>
+            <Button
+                aria-describedby={descriptionId}
+                className={classNames(
+                    {
+                        [`payment-submit-button-${methodId}`]: providersWithCustomClasses.includes(
+                            methodId as PaymentMethodId,
+                        ),
+                    },
+                    'sub-header',
+                )}
+                data-test="payment-submit-button"
+                disabled={
+                    isInitializing ||
+                    isSubmitting ||
+                    isDisabled ||
+                    !!cartLimitMessage ||
+                    !!methodWarning
+                }
+                id="checkout-payment-continue"
+                isFullWidth
+                isLoading={isSubmitting}
+                size={ButtonSize.Large}
+                type="submit"
+                variant={enhancedThemeV1 ? ButtonVariant.Primary : ButtonVariant.Action}
+            >
+                <PaymentSubmitButtonText
+                    brandName={brandName}
+                    initialisationStrategyType={initialisationStrategyType}
+                    isComplete={isComplete}
+                    isPaymentDataRequired={isPaymentDataRequired}
+                    methodGateway={methodGateway}
+                    methodId={methodId}
+                    methodName={methodName}
+                    methodType={methodType}
+                />
+            </Button>
+        </>
     );
 };
 

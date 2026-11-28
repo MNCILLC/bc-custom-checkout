@@ -1,8 +1,49 @@
 import { getYear } from '@bigcommerce/checkout/test-mocks';
 
 import mapToOrderRequestBody from './mapToOrderRequestBody';
+import getUniquePaymentMethodId from './paymentMethod/getUniquePaymentMethodId';
 
 describe('mapToOrderRequestBody()', () => {
+    it.each([
+        { methodId: 'fixture-card', gatewayId: 'fixture-gateway' },
+        { methodId: 'fixture-card', gatewayId: 'fixture' },
+        { methodId: 'card', gatewayId: 'fixture-gateway' },
+        { methodId: 'fixture-card', gatewayId: undefined },
+        { methodId: '-card--', gatewayId: '--gateway-' },
+        { methodId: 'pm--2-ab-card', gatewayId: undefined },
+    ])('preserves the selected method $methodId and gateway $gatewayId', (pair) => {
+        const paymentProviderRadio = getUniquePaymentMethodId(pair.methodId, pair.gatewayId);
+
+        expect(mapToOrderRequestBody({ paymentProviderRadio }, true).payment).toEqual(pair);
+    });
+
+    it('distinguishes pairs that used to produce the same radio value', () => {
+        const values = [
+            getUniquePaymentMethodId('a-b', 'c'),
+            getUniquePaymentMethodId('b', 'c-a'),
+            getUniquePaymentMethodId('c-a-b'),
+        ];
+
+        expect(new Set(values).size).toBe(3);
+    });
+
+    it.each([
+        { methodId: 'cheque', gatewayId: undefined, value: 'cheque' },
+        { methodId: 'bigpaypay', gatewayId: undefined, value: 'bigpaypay' },
+        { methodId: 'paypal', gatewayId: 'adyen', value: 'adyen-paypal' },
+    ])('retains the existing radio value for $methodId', ({ methodId, gatewayId, value }) => {
+        expect(getUniquePaymentMethodId(methodId, gatewayId)).toBe(value);
+    });
+
+    it.each(['pm--99-ab-card', 'gateway-method-extra'])(
+        'rejects an unresolvable radio value %s',
+        (paymentProviderRadio) => {
+            expect(() => mapToOrderRequestBody({ paymentProviderRadio }, true)).toThrow(
+                'Invalid payment method selection',
+            );
+        },
+    );
+
     it('transforms credit card form values into order payload', () => {
         const year = getYear(-2);
         const cardDataYear = year.slice(-2);

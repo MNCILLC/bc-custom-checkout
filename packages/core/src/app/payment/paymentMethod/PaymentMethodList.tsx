@@ -41,7 +41,9 @@ export interface PaymentMethodListProps {
 
 function getPaymentMethodFromListValue(methods: PaymentMethod[], value: string): PaymentMethod {
     const { gatewayId: gateway, methodId: id } = parseUniquePaymentMethodId(value);
-    const method = gateway ? find(methods, { gateway, id }) : find(methods, { id });
+    const method = methods.find(
+        (candidate) => candidate.id === id && (candidate.gateway || undefined) === gateway,
+    );
 
     if (!method) {
         throw new Error(`Unable to find payment method with id: ${id}`);

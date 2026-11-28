@@ -98,7 +98,26 @@ function readWarehouseDeployment(mode = 'off', encodedStores = '[]') {
             )
                 throw new Error('Choose one test payment opt-in');
 
+            const preview = store.localCardPreview;
+
+            if (
+                preview !== undefined &&
+                (mode !== 'development' ||
+                    !store.allowTestProvider ||
+                    typeof preview?.methodId !== 'string' ||
+                    !preview.methodId.length ||
+                    preview.methodId.length > 128 ||
+                    ['cheque', 'bigpaypay'].includes(preview.methodId) ||
+                    typeof preview.gatewayId !== 'string' ||
+                    !preview.gatewayId.length ||
+                    preview.gatewayId.length > 128)
+            )
+                throw new Error('Invalid local card preview');
+
             return {
+                ...(preview
+                    ? { localCardPreview: { methodId: preview.methodId, gatewayId: preview.gatewayId } }
+                    : {}),
                 ...(store.allowTestProvider === true ? { allowTestProvider: true } : {}),
                 ...(store.allowHostedSandboxCheck === true
                     ? { allowHostedSandboxCheck: true }

@@ -51,14 +51,24 @@ import {
     createEmbeddedCheckoutStylesheet,
     createEmbeddedCheckoutSupport,
 } from '../embeddedCheckout';
+import * as warehouseDeployment from '../warehouse/deployment';
+import { acceptPaymentGrants, paymentGrants } from '../warehouse/paymentAuthorization';
 import * as warehouseSubmission from '../warehouse/submission';
+import { assertTestPayment } from '../warehouse/testPayment';
+import { validateCurrentWarehouse } from '../warehouse/validation';
 
+import mapToOrderRequestBody from './mapToOrderRequestBody';
 import { type PaymentContextProps } from './PaymentContext';
 
 // Controllable billing save for the enhancedThemeV1 pre-submit gate. Other tests keep
 // enhancedThemeV1 off, so the block never renders and this stays unused there.
 
 let mockEnsureBillingAddressSaved: jest.Mock<Promise<boolean>>;
+
+jest.mock('../warehouse/deployment', () => ({
+    __esModule: true,
+    ...jest.requireActual('../warehouse/deployment'),
+}));
 
 jest.mock('@bigcommerce/checkout/dom-utils', () => ({
     ...jest.requireActual('@bigcommerce/checkout/dom-utils'),
@@ -286,6 +296,229 @@ describe('Payment step', () => {
 
         expect(screen.getByRole('radio', { name: 'Pay in Store' })).toBeInTheDocument();
         expect(screen.getByRole('radio', { name: 'Cash on Delivery' })).toBeInTheDocument();
+    });
+
+    it.each([
+        { methodId: 'fixture_card', gatewayId: 'fixture_gateway' },
+        { methodId: 'fixture-card', gatewayId: 'fixture-gateway' },
+    ])('rehearses withdrawal of the selected local card $methodId', async (pair) => {
+        const fixture = {
+            ...checkoutWithShippingAndBilling,
+            consignments: checkoutWithShippingAndBilling.consignments.map((item) => ({
+                ...item,
+                selectedShippingOption: undefined,
+                selectedPickupOption: { pickupMethodId: 2 },
+            })),
+        };
+        const fixtureMethod = {
+            ...payments[2],
+            id: pair.methodId,
+            gateway: pair.gatewayId,
+            config: { ...payments[2].config, displayName: 'Fixture card' },
+        };
+        const cheque = {
+            ...payments[0],
+            id: 'cheque',
+            config: { ...payments[0].config, displayName: 'Check' },
+        };
+        const known = [cheque, payments[2]];
+        const endpoint = 'https://validator.example/validate';
+        const warehouse = {
+            id: 'powell',
+            label: 'Powell',
+            pickupLabel: 'Powell pickup',
+            locationId: 2,
+            pickupMethodId: 2,
+            allowShipping: false,
+        };
+        const revision = 'synthetic-revision';
+        let offered = [...known, fixtureMethod];
+        let reads = 0;
+        let claims = 0;
+
+        checkoutService = checkout.use(CheckoutPreset.CheckoutWithShippingAndBilling, {
+            checkout: fixture,
+        });
+        checkout.setRequestHandler(
+            http.get('/api/storefront/checkout/*', () => HttpResponse.json(fixture)),
+        );
+        checkout.setRequestHandler(
+            http.get('/api/storefront/payments', () =>
+                HttpResponse.json([...known, fixtureMethod]),
+            ),
+        );
+        checkout.setRequestHandler(
+            http.post(endpoint, async ({ request }) => {
+                const body = (await request.json()) as {
+                    cartId: string;
+                    submission?: unknown;
+                    payment?: unknown;
+                };
+
+                if (body.payment) {
+                    claims++;
+
+                    return HttpResponse.json({}, { status: 409 });
+                }
+
+                reads++;
+
+                return HttpResponse.json({
+                    version: 1,
+                    cartId: body.cartId,
+                    revision,
+                    warehouse,
+                    submission: body.submission,
+                    paymentAuthorizations: offered.map((m) => ({
+                        version: 1,
+                        methodId: m.id,
+                        gatewayId: m.gateway,
+                        testMode: m.id !== 'cheque',
+                        token: `synthetic-${m.id}`,
+                        expiresAt: 9999999999,
+                    })),
+                });
+            }),
+        );
+
+        const native = jest
+            .spyOn(checkoutService, 'submitOrder')
+            .mockRejectedValue(new Error('Forbidden test order'));
+        const init = jest
+            .spyOn(checkoutService, 'initializePayment')
+            .mockImplementation(async () => checkoutService.getState());
+
+        window.warehouseCheckout = {
+            version: 1,
+            preview: true,
+            cartId: fixture.id,
+            warehouse,
+            validation: { endpoint, revision, token: 'fixture', expiresAt: 9999999999 },
+        };
+
+        const deployment = jest
+            .spyOn(warehouseDeployment, 'getWarehouseDeployment')
+            .mockReturnValue({
+                mode: 'development',
+                stores: [
+                    {
+                        checkoutOrigin: window.location.origin,
+                        validationEndpoint: endpoint,
+                        localCardPreview: pair,
+                        allowCheckTest: true,
+                        allowTestProvider: true,
+                    },
+                ],
+            });
+
+        try {
+            await validateCurrentWarehouse();
+            expect(paymentGrants()?.map((g) => g.methodId)).toEqual([
+                'cheque',
+                'bigpaypay',
+                pair.methodId,
+            ]);
+            render(<CheckoutTest {...defaultProps} />);
+
+            const radio = await screen.findByRole('radio', { name: /^Fixture card/ });
+
+            await userEvent.click(radio);
+            expect(radio).toBeChecked();
+
+            const button = screen.getByRole('button', { name: /place order/i });
+            const warning =
+                'This payment method is no longer available. Please choose another payment method.';
+
+            expect(button).toBeEnabled();
+            expect(screen.queryByText(warning)).not.toBeInTheDocument();
+            expect(
+                mapToOrderRequestBody(
+                    { paymentProviderRadio: (radio as HTMLInputElement).value },
+                    true,
+                ).payment,
+            ).toEqual(pair);
+            offered = known;
+            await act(async () => validateCurrentWarehouse());
+            expect(paymentGrants()?.map((g) => g.methodId)).toEqual(['cheque', 'bigpaypay']);
+            expect(
+                screen.getByRole('radio', { name: /^Fixture card/, checked: true }),
+            ).toBeInTheDocument();
+
+            const readsBeforeClick = reads;
+
+            expect(screen.getByText(warning)).toBeVisible();
+            expect(button).toHaveAccessibleDescription(warning);
+            expect(button).toBeDisabled();
+            await userEvent.click(button);
+            expect(reads).toBe(readsBeforeClick);
+
+            const selectRemainingMethod = async (name: RegExp) => {
+                const alternate = screen.getByRole('radio', { name });
+
+                await userEvent.click(alternate);
+                expect(alternate).toBeChecked();
+                expect(screen.queryByText(warning)).not.toBeInTheDocument();
+                expect(button).toBeEnabled();
+
+                const methodId = (alternate as HTMLInputElement).value;
+
+                expect(() =>
+                    assertTestPayment({
+                        methodId,
+                        selectedMethodId: methodId,
+                        customSubmit: false,
+                        usesStoredInstrument: false,
+                        shouldSaveInstrument: false,
+                    }),
+                ).not.toThrow();
+            };
+
+            await selectRemainingMethod(/^Check$/);
+            await userEvent.click(radio);
+            expect(button).toBeDisabled();
+            await selectRemainingMethod(/^Test Payment Provider/i);
+
+            const noMethods = 'No payment methods are available for this checkout right now.';
+
+            checkout.setRequestHandler(
+                http.post(endpoint, () => HttpResponse.json({}, { status: 503 }), { once: true }),
+            );
+            await expect(validateCurrentWarehouse()).rejects.toThrow(
+                'Warehouse verification failed',
+            );
+            expect(screen.queryByText(noMethods)).not.toBeInTheDocument();
+
+            offered = [];
+            await act(async () => validateCurrentWarehouse());
+            expect(screen.getByText(noMethods)).toBeVisible();
+            expect(button).toBeDisabled();
+            expect(button).toHaveAccessibleDescription(noMethods);
+
+            const check = screen.getByRole('radio', { name: /^Check$/ });
+
+            await userEvent.click(check);
+            expect(check).toBeChecked();
+            expect(button).toBeDisabled();
+            expect(button).toHaveAccessibleDescription(noMethods);
+
+            offered = [cheque];
+            await act(async () => validateCurrentWarehouse());
+            expect(check).toBeChecked();
+            expect(screen.queryByText(noMethods)).not.toBeInTheDocument();
+            expect(button).toBeEnabled();
+            expect(button).not.toHaveAttribute('aria-describedby');
+        } finally {
+            acceptPaymentGrants(undefined);
+            delete window.warehouseCheckout;
+            deployment.mockRestore();
+            init.mockRestore();
+
+            const nativeCalls = native.mock.calls.length;
+
+            native.mockRestore();
+            expect(claims).toBe(0);
+            expect(nativeCalls).toBe(0);
+        }
     });
 
     it('tracks selected payment method on initial load', async () => {

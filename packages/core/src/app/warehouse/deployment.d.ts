@@ -8,6 +8,7 @@ export interface WarehouseDeployment {
         allowCheckTest?: boolean;
         allowHostedSandboxCheck?: boolean;
         allowTestProvider?: boolean;
+        localCardPreview?: { methodId: string; gatewayId: string };
         validationEndpoint: string;
         initializationEndpoint?: string;
         freightEndpoint?: string;

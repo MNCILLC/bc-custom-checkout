@@ -13,6 +13,7 @@ import { render, screen } from '@bigcommerce/checkout/test-utils';
 import { getCart } from '../cart/carts.mock';
 import { getStoreConfig } from '../config/config.mock';
 import { getWarehouseDeployment } from '../warehouse/deployment';
+import { acceptPaymentGrants } from '../warehouse/paymentAuthorization';
 import { testProviderAuthorization } from '../warehouse/testProvider';
 import WarehouseValidationGate from '../warehouse/WarehouseValidationGate';
 
@@ -199,6 +200,85 @@ describe('PaymentSubmitButton', () => {
             jest.mocked(getWarehouseDeployment).mockReturnValue({ mode: 'off', stores: [] });
         }
     });
+
+    it.each([true, false])(
+        'handles grant expiry and renewal with purchasing enabled = %s',
+        (enabled) => {
+            jest.useFakeTimers({ now: new Date('2026-01-01T00:00:00Z') });
+
+            const endpoint = 'https://validator.example/validate';
+            const now = Date.now() / 1000;
+            const card = {
+                version: 1 as const,
+                methodId: 'bigpaypay',
+                gatewayId: null,
+                testMode: true,
+                token: 'local-card',
+                expiresAt: now + 1,
+            };
+            const check = {
+                ...card,
+                methodId: 'cheque',
+                testMode: false,
+                token: 'local-check',
+                expiresAt: now + 60,
+            };
+
+            window.warehouseCheckout = {
+                version: 1,
+                preview: true,
+                cartId: 'synthetic-pickup',
+                warehouse: {
+                    id: 'powell',
+                    label: 'Powell',
+                    pickupLabel: 'Powell pickup',
+                    locationId: 2,
+                    pickupMethodId: 2,
+                    allowShipping: false,
+                },
+                validation: { endpoint, revision: 'r1', token: 'synthetic', expiresAt: now + 600 },
+            };
+            jest.mocked(getWarehouseDeployment).mockReturnValue({
+                mode: 'development',
+                stores: [
+                    {
+                        checkoutOrigin: window.location.origin,
+                        validationEndpoint: endpoint,
+                        allowCheckTest: enabled,
+                        allowTestProvider: enabled,
+                    },
+                ],
+            });
+
+            try {
+                acceptPaymentGrants([card, check]);
+                render(<PaymentSubmitButtonTest methodId="bigpaypay" />);
+
+                const button = screen.getByRole('button', { name: /place order/i });
+
+                expect(button).toBeEnabled();
+                act(() => {
+                    jest.advanceTimersByTime(1000);
+                });
+
+                if (enabled) {
+                    expect(button).toBeDisabled();
+                    expect(button).toHaveAccessibleDescription(/choose another payment method/i);
+                } else {
+                    expect(button).toBeEnabled();
+                    expect(button).not.toHaveAttribute('aria-describedby');
+                }
+
+                act(() => acceptPaymentGrants([{ ...card, expiresAt: now + 60 }, check]));
+                expect(button).toBeEnabled();
+                expect(button).not.toHaveAttribute('aria-describedby');
+            } finally {
+                act(() => acceptPaymentGrants(undefined));
+                delete window.warehouseCheckout;
+                jest.useRealTimers();
+            }
+        },
+    );
 
     it('renders button with default label', () => {
         render(<PaymentSubmitButtonTest />);

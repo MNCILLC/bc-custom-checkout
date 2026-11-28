@@ -187,6 +187,49 @@ it('Check-only execution needs an explicit per-store staging opt-in', () => {
     ).toThrow();
 });
 
+it('accepts a local card preview only for an explicitly opted-in development store', () => {
+    const previous = process.env.NODE_ENV;
+    const localCardPreview = { methodId: 'fixture-card', gatewayId: 'fixture-gateway' };
+    const store = {
+        checkoutOrigin: stores[0].checkoutOrigin,
+        validationEndpoint: 'http://localhost:3000/api/warehouse/validate',
+        allowTestProvider: true,
+        localCardPreview,
+    };
+
+    try {
+        process.env.NODE_ENV = 'development';
+        expect(readWarehouseDeployment('development', JSON.stringify([store])).stores).toEqual([
+            store,
+        ]);
+
+        for (const changes of [
+            { allowTestProvider: false },
+            { localCardPreview: { ...localCardPreview, methodId: 'cheque' } },
+            { localCardPreview: { ...localCardPreview, gatewayId: '' } },
+        ]) {
+            expect(() =>
+                readWarehouseDeployment('development', JSON.stringify([{ ...store, ...changes }])),
+            ).toThrow();
+        }
+
+        expect(() =>
+            readWarehouseDeployment(
+                'staging',
+                JSON.stringify([
+                    {
+                        ...store,
+                        validationEndpoint: stores[0].validationEndpoint,
+                    },
+                ]),
+            ),
+        ).toThrow();
+    } finally {
+        if (previous === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = previous;
+    }
+});
+
 it('requires an explicit Sandbox Cowboy opt-in to combine both methods in staging', () => {
     const sandbox = {
         checkoutOrigin: 'https://sandboxcatalystcheckout.mncillc.com',
